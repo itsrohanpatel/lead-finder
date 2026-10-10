@@ -1,5 +1,6 @@
 """Master orchestrator pipeline for Prospector-AI."""
 
+import re
 import time
 import logging
 from typing import List, Optional
@@ -83,10 +84,17 @@ class ProspectorPipeline:
         name = company_info.clean_name
         domain_sld = company_info.domain.split(".")[0].lower() if company_info.domain else ""
 
-        # Collect distinct search terms (e.g. "Meraki Labs", "merakilabs", "RK HR Management")
+        # Collect distinct search terms (e.g. "Meraki Labs", "merakilabs", "rk-hr-management")
         search_terms = [f'"{name}"']
         if domain_sld and domain_sld not in name.lower().replace(" ", ""):
             search_terms.append(domain_sld)
+
+        if company_info.linkedin_company_url:
+            match_slug = re.search(r"linkedin\.com/company/([a-zA-Z0-9_\-]+)", company_info.linkedin_company_url)
+            if match_slug:
+                raw_slug = match_slug.group(1).lower()
+                if raw_slug not in [s.lower().replace('"', '') for s in search_terms]:
+                    search_terms.append(raw_slug)
 
         # Smart acronym expansions for HR/Tech/AI
         name_lower = name.lower()
@@ -100,8 +108,13 @@ class ProspectorPipeline:
             base = name[:-2].strip()
             search_terms.append(f'"{base.title()} AI"')
 
-        # Execute queries per target role and term
-        for term in search_terms[:2]:  # Top 2 most targeted terms
+        # Execute queries per target role and term (up to 3 unique terms)
+        seen_query_terms = set()
+        for term in search_terms[:3]:
+            term_clean = term.strip().lower()
+            if term_clean in seen_query_terms:
+                continue
+            seen_query_terms.add(term_clean)
             if RoleCategory.C_SUITE in target_roles:
                 dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Chief" OR "Director" OR "Partner") {term}'
                 results = self.search_engine.query(dork, max_results=self.max_leads_per_role)

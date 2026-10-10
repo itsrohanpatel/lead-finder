@@ -67,7 +67,10 @@ class CompanyResolver:
                 for a in soup.find_all("a", href=True):
                     href = a["href"]
                     if "linkedin.com/company/" in href:
-                        linkedin_company = href.split("?")[0].rstrip("/")
+                        clean_li = href.split("?")[0].rstrip("/")
+                        if clean_li.startswith("http://"):
+                            clean_li = "https://" + clean_li[7:]
+                        linkedin_company = clean_li
                         break
 
                 # 3. Direct LinkedIn personal profiles
@@ -89,6 +92,43 @@ class CompanyResolver:
                                     "name": name,
                                     "linkedin_url": clean_url,
                                     "job_title": "Founder / Leadership",
+                                })
+
+                # 4. Schema.org JSON-LD & Author metadata
+                for script in soup.find_all("script", type="application/ld+json"):
+                    try:
+                        import json
+                        data = json.loads(script.string or "")
+                        def extract_ld_persons(obj):
+                            if isinstance(obj, dict):
+                                if obj.get("@type") == "Person" and obj.get("name"):
+                                    p_name = obj.get("name", "").strip()
+                                    if len(p_name.split()) in [2, 3] and not any(bad in p_name.lower() for bad in ["admin", "theme"]):
+                                        if not any(tl["name"].lower() == p_name.lower() for tl in team_leads):
+                                            team_leads.append({
+                                                "name": p_name,
+                                                "linkedin_url": None,
+                                                "job_title": "Founder & CEO",
+                                            })
+                                for v in obj.values():
+                                    extract_ld_persons(v)
+                            elif isinstance(obj, list):
+                                for item in obj:
+                                    extract_ld_persons(item)
+                        extract_ld_persons(data)
+                    except Exception:
+                        pass
+
+                for meta in soup.find_all("meta"):
+                    prop = (meta.get("property") or meta.get("name") or "").lower()
+                    content = (meta.get("content") or "").strip()
+                    if any(k in prop for k in ["author", "twitter:data1", "article:author"]):
+                        if content and len(content.split()) in [2, 3] and not any(bad in content.lower() for bad in ["admin", "theme", "http"]):
+                            if not any(tl["name"].lower() == content.lower() for tl in team_leads):
+                                team_leads.append({
+                                    "name": content,
+                                    "linkedin_url": None,
+                                    "job_title": "Founder & CEO",
                                 })
         except Exception:
             pass

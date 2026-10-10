@@ -60,7 +60,7 @@ def render_results_table(result: ProspectorResult) -> None:
             lead.job_title,
             best_email_str,
             f"[{conf_color}]{conf_pct}[/{conf_color}]",
-            lead.linkedin_url,
+            lead.linkedin_url or "[dim]Website[/dim]",
         )
 
     console.print(table)

@@ -39,7 +39,7 @@ class LeadRecord(BaseModel):
     last_name: str
     job_title: str
     role_category: RoleCategory
-    linkedin_url: str
+    linkedin_url: Optional[str] = None
     company_name: str
     domain: Optional[str] = None
     best_email: Optional[str] = None
