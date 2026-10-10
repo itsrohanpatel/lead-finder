@@ -43,7 +43,7 @@ def test_extract_leads_deduplication():
         },
         {
             "link": "https://www.linkedin.com/in/sarah-connor",
-            "title": "Sarah Connor - Head of People - Cyberdyne Systems | LinkedIn",
+            "title": "Sarah Connor - Head of People - Microsoft | LinkedIn",
         },
     ]
 
@@ -53,3 +53,14 @@ def test_extract_leads_deduplication():
     assert leads[0].role_category == RoleCategory.C_SUITE
     assert leads[1].full_name == "Sarah Connor"
     assert leads[1].role_category == RoleCategory.HR_TALENT
+
+
+def test_company_affiliation_filters_unrelated_companies():
+    search_results = [
+        {
+            "link": "https://www.linkedin.com/in/terminator",
+            "title": "T-800 - Head of Operations - Cyberdyne Systems | LinkedIn",
+        }
+    ]
+    leads = LeadExtractor.extract_leads(search_results, company_name="Microsoft", domain="microsoft.com")
+    assert len(leads) == 0
