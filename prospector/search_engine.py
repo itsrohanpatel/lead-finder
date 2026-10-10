@@ -74,7 +74,17 @@ class SearchEngine:
         return self.search_duckduckgo(query_str, max_results=max_results)
 
     def find_company_domain(self, company_name: str) -> Optional[str]:
-        """Search engine lookup to resolve official company domain from name."""
+        """Resolve official company domain from name via fast DNS probe and search engine fallback."""
+        clean_cand = company_name.lower().replace(" ", "").strip()
+        # Fast DNS check on {clean_cand}.com
+        if clean_cand and len(clean_cand) >= 3:
+            try:
+                import dns.resolver
+                dns.resolver.resolve(f"{clean_cand}.com", "A", lifetime=1.5)
+                return f"{clean_cand}.com"
+            except Exception:
+                pass
+
         query_str = f'"{company_name}" official website domain'
         results = self.query(query_str, max_results=5)
         for r in results:

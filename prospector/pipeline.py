@@ -58,13 +58,40 @@ class ProspectorPipeline:
         raw_search_items = []
         name = company_info.clean_name
 
+        # Build smart company name variations (e.g. tigihr -> "tigihr" OR "TIGI HR")
+        name_variations = [f'"{name}"']
+        name_lower = name.lower()
+        if name_lower.endswith("hr") and len(name) > 2:
+            base = name[:-2].strip()
+            name_variations.append(f'"{base.upper()} HR"')
+            name_variations.append(f'"{base.title()} HR"')
+        elif name_lower.endswith("ai") and len(name) > 2:
+            base = name[:-2].strip()
+            name_variations.append(f'"{base.upper()} AI"')
+            name_variations.append(f'"{base.title()} AI"')
+        elif name_lower.endswith("tech") and len(name) > 4:
+            base = name[:-4].strip()
+            name_variations.append(f'"{base.title()} Tech"')
+
+        # Deduplicate variations
+        seen_vars = set()
+        clean_vars = []
+        for v in name_variations:
+            if v.lower() not in seen_vars:
+                seen_vars.add(v.lower())
+                clean_vars.append(v)
+
+        company_query_term = " OR ".join(clean_vars)
+        if len(clean_vars) > 1:
+            company_query_term = f"({company_query_term})"
+
         if RoleCategory.C_SUITE in target_roles:
-            c_suite_dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Chief" OR "CTO" OR "COO" OR "CFO") "at {name}"'
+            c_suite_dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Co-Founder" OR "Chief" OR "Director" OR "CTO" OR "COO" OR "CFO") {company_query_term}'
             c_results = self.search_engine.query(c_suite_dork, max_results=self.max_leads_per_role)
             raw_search_items.extend(c_results)
 
         if RoleCategory.HR_TALENT in target_roles:
-            hr_dork = f'site:linkedin.com/in ("Talent Acquisition" OR "Head of Talent" OR "Recruiter" OR "HR" OR "People Ops") "at {name}"'
+            hr_dork = f'site:linkedin.com/in ("Talent Acquisition" OR "Head of Talent" OR "Recruiter" OR "HR" OR "People Ops") {company_query_term}'
             hr_results = self.search_engine.query(hr_dork, max_results=self.max_leads_per_role)
             raw_search_items.extend(hr_results)
 

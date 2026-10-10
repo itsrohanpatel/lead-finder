@@ -139,6 +139,15 @@ class EmailVerifier:
         )
 
     @classmethod
+    def test_port25_reachability(cls, mx_host: str, timeout: float = 1.5) -> bool:
+        """Quickly probe if TCP port 25 is reachable from current host/ISP."""
+        try:
+            with socket.create_connection((mx_host, 25), timeout=timeout):
+                return True
+        except (socket.timeout, TimeoutError, OSError):
+            return False
+
+    @classmethod
     def verify_lead_permutations(
         cls,
         permutations: List[EmailPermutation],
@@ -146,18 +155,32 @@ class EmailVerifier:
         mx_info: Optional[MXInfo] = None,
         check_smtp: bool = True,
     ) -> Tuple[List[EmailPermutation], Optional[str], float]:
-        """Verify all permutations, score confidence, and return the best candidate."""
+        """Verify permutations with fast-fail port 25 probing to prevent socket hangs."""
         if not mx_info:
             mx_info = cls.lookup_mx_records(domain)
 
+        can_probe_smtp = False
         is_catch_all = None
+
         if check_smtp and mx_info.has_mx and mx_info.mx_records:
-            is_catch_all = cls.check_catch_all(domain, mx_info.mx_records[0])
-            mx_info.is_catch_all = is_catch_all
+            top_mx = mx_info.mx_records[0]
+            # Fast 1.5s probe to check if Port 25 is filtered by ISP/cloud firewall
+            can_probe_smtp = cls.test_port25_reachability(top_mx, timeout=1.5)
+            if can_probe_smtp:
+                is_catch_all = cls.check_catch_all(domain, top_mx, timeout=2.0)
+                mx_info.is_catch_all = is_catch_all
 
         verified_perms: List[EmailPermutation] = []
-        for p in permutations:
-            v_p = cls.verify_permutation(p, mx_info, is_catch_all=is_catch_all, check_smtp=check_smtp)
+        for idx, p in enumerate(permutations):
+            # Only probe top 2 candidate permutations via SMTP to preserve speed
+            probe_this = can_probe_smtp and (idx < 2)
+            v_p = cls.verify_permutation(
+                p,
+                mx_info,
+                is_catch_all=is_catch_all,
+                check_smtp=probe_this,
+                timeout=2.0,
+            )
             verified_perms.append(v_p)
 
         # Sort by confidence score descending
