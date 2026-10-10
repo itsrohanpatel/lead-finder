@@ -18,8 +18,15 @@ class SearchEngine:
 
     def __init__(self, serper_api_key: Optional[str] = None):
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
+        try:
+            from ddgs import ddgs
+            for eng in list(ddgs.ENGINES.get("text", {}).keys()):
+                if eng != "yahoo":
+                    ddgs.ENGINES["text"].pop(eng, None)
+        except Exception:
+            pass
 
-    def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 2) -> List[Dict[str, Any]]:
+    def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 1) -> List[Dict[str, Any]]:
         """Search using DuckDuckGo via DDGS text search with automatic backoff retry."""
         results: List[Dict[str, Any]] = []
         for attempt in range(retries + 1):
@@ -82,25 +89,46 @@ class SearchEngine:
 
     def find_company_domain(self, company_name: str) -> Optional[str]:
         """Resolve official company domain from name via fast DNS probe and search engine fallback."""
-        clean_cand = company_name.lower().replace(" ", "").strip()
-        # Fast DNS check on {clean_cand}.com
-        if clean_cand and len(clean_cand) >= 3:
+        import re
+        import dns.resolver
+
+        clean_slug = re.sub(r"[^a-z0-9]", "", company_name.lower())
+        candidates = []
+        if clean_slug:
+            candidates.append(f"{clean_slug}.com")
+            candidates.append(f"{clean_slug}.in")
+            candidates.append(f"{clean_slug}.ai")
+            if clean_slug.startswith("the") and len(clean_slug) > 3:
+                candidates.append(f"{clean_slug[3:]}.com")
+                candidates.append(f"{clean_slug[3:]}.in")
+
+        # Fast DNS check on candidate domains
+        for cand in candidates:
             try:
-                import dns.resolver
-                dns.resolver.resolve(f"{clean_cand}.com", "A", lifetime=1.5)
-                return f"{clean_cand}.com"
+                dns.resolver.resolve(cand, "A", lifetime=1.2)
+                return cand
             except Exception:
                 pass
 
         query_str = f'"{company_name}" official website domain'
         results = self.query(query_str, max_results=5)
+        blacklisted = [
+            "linkedin.com", "wikipedia.org", "bloomberg.com", "facebook.com",
+            "twitter.com", "x.com", "crunchbase.com", "bing.com", "google.com",
+            "yahoo.com", "duckduckgo.com", "youtube.com", "instagram.com",
+            "glassdoor.com", "indeed.com", "ambitionbox.com", "zaubacorp.com",
+            "tofler.in", "tracxn.com"
+        ]
         for r in results:
             link = r.get("link", "")
-            # Skip social media / aggregator domains
-            if any(agg in link.lower() for agg in ["linkedin.com", "wikipedia.org", "bloomberg.com", "facebook.com", "twitter.com", "x.com", "crunchbase.com"]):
+            if any(agg in link.lower() for agg in blacklisted):
                 continue
             from prospector.company_resolver import CompanyResolver
             domain = CompanyResolver.extract_domain_from_url(link)
-            if domain:
-                return domain
+            if domain and "." in domain:
+                try:
+                    dns.resolver.resolve(domain, "A", lifetime=1.2)
+                    return domain
+                except Exception:
+                    continue
         return None

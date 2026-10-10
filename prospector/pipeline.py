@@ -116,20 +116,18 @@ class ProspectorPipeline:
                 continue
             seen_query_terms.add(term_clean)
             if RoleCategory.C_SUITE in target_roles:
-                dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Chief" OR "Director" OR "Partner") {term}'
-                results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                if not results:
-                    fallback_dork = f'site:linkedin.com/in {term} CEO OR Founder'
-                    results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
-                raw_search_items.extend(results)
+                for role_kw in ["CEO", "Founder"]:
+                    dork = f"site:linkedin.com/in {term} {role_kw}"
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
 
             if RoleCategory.HR_TALENT in target_roles:
-                dork = f'site:linkedin.com/in ("Talent" OR "Recruiter" OR "HR" OR "People") {term}'
-                results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                if not results:
-                    fallback_dork = f'site:linkedin.com/in {term} Talent OR HR'
-                    results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
-                raw_search_items.extend(results)
+                for role_kw in ["HR", "Talent"]:
+                    dork = f"site:linkedin.com/in {term} {role_kw}"
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
 
         # Step 4: Extract Leads from Search Results
         search_leads = LeadExtractor.extract_leads(

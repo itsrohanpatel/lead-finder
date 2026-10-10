@@ -19,8 +19,16 @@ LEGAL_SUFFIXES = [
     r"\bgroup\b",
     r"\bservices\b",
     r"\bpvt\.?\b",
+    r"\bprivate\b",
+    r"\bpriovate\b",
     r"\bgmbh\b",
     r"\bco\.?\b",
+    r"\bahmedabad\b",
+    r"\bmumbai\b",
+    r"\bbangalore\b",
+    r"\bdelhi\b",
+    r"\bindia\b",
+    r"\busa\b",
 ]
 
 
