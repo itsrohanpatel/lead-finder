@@ -25,9 +25,12 @@ C_SUITE_KEYWORDS = [
     r"\bco-founder\b",
     r"\bpresident\b",
     r"\bmanaging director\b",
+    r"\bdirector\b",
     r"\bvp\b",
     r"\bvice president\b",
     r"\bpartner\b",
+    r"\bchief\b",
+    r"\bfounder'?s? office\b",
 ]
 
 HR_TALENT_KEYWORDS = [
@@ -81,8 +84,11 @@ class LeadExtractor:
         - "Jane Doe | Head of Talent - Stripe"
         - "Alex Smith - Chief Technology Officer at Acme"
         """
+        # Split on concatenated profile separators (e.g. DuckDuckGo clustered results)
+        first_chunk = re.split(r"(?:\|\s*LinkedIn|\.\.\.)", raw_title, flags=re.IGNORECASE)[0].strip()
+
         # Strip trailing branding ("| LinkedIn", "- LinkedIn", etc.)
-        cleaned = re.sub(r"[\-\|\–\—]\s*LinkedIn.*$", "", raw_title, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"[\-\|\–\—]\s*LinkedIn.*$", "", first_chunk, flags=re.IGNORECASE).strip()
 
         # Common delimiters between Name, Title, and Company: ' - ', ' | ', ' – ', ' — '
         parts = re.split(r"\s+[\-\|\–\—]\s+", cleaned)
@@ -157,10 +163,18 @@ class LeadExtractor:
             if any(bad in name.lower() for bad in ["linkedin", "profiles", "directory", "jobs"]):
                 continue
 
-            # Verify company affiliation in title or snippet to prevent false attribution
-            item_text = (title + " " + item.get("snippet", "")).lower()
+            # Check if title explicitly indicates employment at a different company
+            match_at = re.search(r"\s+at\s+([^|\-]+)$", title, re.IGNORECASE)
             company_kw = company_name.lower()
             domain_sld = domain.split(".")[0].lower() if domain else ""
+            if match_at:
+                at_company = match_at.group(1).lower().strip()
+                # If they explicitly work at an unrelated company
+                if not (company_kw in at_company or at_company in company_kw or (domain_sld and domain_sld in at_company)):
+                    continue
+
+            # Verify company affiliation in title or snippet to prevent false attribution
+            item_text = (title + " " + item.get("snippet", "")).lower()
             
             has_affiliation = (company_kw in item_text) or (domain_sld and domain_sld in item_text)
             if not has_affiliation and company_kw.endswith("hrm") and len(company_kw) > 3:
@@ -174,6 +188,7 @@ class LeadExtractor:
 
             if not has_affiliation and len(company_name) > 2:
                 continue
+
 
             first_name, last_name = cls.split_name(name)
             if not first_name:

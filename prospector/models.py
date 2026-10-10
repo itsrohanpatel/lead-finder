@@ -18,6 +18,7 @@ class CompanyInfo(BaseModel):
     clean_name: str
     domain: Optional[str] = None
     linkedin_company_url: Optional[str] = None
+    direct_website_leads: List[dict] = Field(default_factory=list)
 
 
 class EmailPermutation(BaseModel):

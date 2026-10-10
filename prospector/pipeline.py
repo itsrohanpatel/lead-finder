@@ -54,67 +54,87 @@ class ProspectorPipeline:
                 company_info.domain = discovered_domain
                 logger.info(f"Discovered domain for {company_info.clean_name}: {discovered_domain}")
 
-        # Step 2: Query Search Engine with Role-Specific Dorks
+        # Step 2: Initialize leads with direct website team members (if discovered)
+        extracted_leads: List[LeadRecord] = []
+        seen_names = set()
+        seen_urls = set()
+
+        if company_info.direct_website_leads and RoleCategory.C_SUITE in target_roles:
+            for dl in company_info.direct_website_leads:
+                fname, lname = LeadExtractor.split_name(dl["name"])
+                if fname:
+                    lead_rec = LeadRecord(
+                        full_name=dl["name"],
+                        first_name=fname,
+                        last_name=lname,
+                        job_title=dl.get("job_title", "Leadership / Founder"),
+                        role_category=RoleCategory.C_SUITE,
+                        linkedin_url=dl.get("linkedin_url"),
+                        company_name=company_info.clean_name,
+                        domain=company_info.domain,
+                    )
+                    extracted_leads.append(lead_rec)
+                    seen_names.add(f"{fname.lower()} {lname.lower()}")
+                    if dl.get("linkedin_url"):
+                        seen_urls.add(dl.get("linkedin_url"))
+
+        # Step 3: Query Search Engine with Role-Specific Dorks
         raw_search_items = []
         name = company_info.clean_name
+        domain_sld = company_info.domain.split(".")[0].lower() if company_info.domain else ""
 
-        # Build smart company name variations (e.g. tigihr -> "tigihr" OR "TIGI HR")
-        name_variations = [f'"{name}"']
+        # Collect distinct search terms (e.g. "Meraki Labs", "merakilabs", "RK HR Management")
+        search_terms = [f'"{name}"']
+        if domain_sld and domain_sld not in name.lower().replace(" ", ""):
+            search_terms.append(domain_sld)
+
+        # Smart acronym expansions for HR/Tech/AI
         name_lower = name.lower()
         if name_lower.endswith("hrm") and len(name) > 3:
             base = name[:-3].strip()
-            name_variations.append(f'"{base.upper()} HR"')
-            name_variations.append(f'"{base.upper()} HRM"')
-            name_variations.append(f'"{base.upper()} HR Management"')
+            search_terms.extend([f'"{base.upper()} HR"', f'"{base.upper()} HR Management"'])
         elif name_lower.endswith("hr") and len(name) > 2:
             base = name[:-2].strip()
-            name_variations.append(f'"{base.upper()} HR"')
-            name_variations.append(f'"{base.title()} HR"')
+            search_terms.extend([f'"{base.upper()} HR"', f'"{base.title()} HR"'])
         elif name_lower.endswith("ai") and len(name) > 2:
             base = name[:-2].strip()
-            name_variations.append(f'"{base.upper()} AI"')
-            name_variations.append(f'"{base.title()} AI"')
-        elif name_lower.endswith("tech") and len(name) > 4:
-            base = name[:-4].strip()
-            name_variations.append(f'"{base.title()} Tech"')
+            search_terms.append(f'"{base.title()} AI"')
 
-        # Deduplicate variations
-        seen_vars = set()
-        clean_vars = []
-        for v in name_variations:
-            if v.lower() not in seen_vars:
-                seen_vars.add(v.lower())
-                clean_vars.append(v)
+        # Execute queries per target role and term
+        for term in search_terms[:2]:  # Top 2 most targeted terms
+            if RoleCategory.C_SUITE in target_roles:
+                dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Chief" OR "Director" OR "Partner") {term}'
+                results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                if not results:
+                    fallback_dork = f'site:linkedin.com/in {term} CEO OR Founder'
+                    results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
+                raw_search_items.extend(results)
 
-        company_query_term = " OR ".join(clean_vars)
-        if len(clean_vars) > 1:
-            company_query_term = f"({company_query_term})"
+            if RoleCategory.HR_TALENT in target_roles:
+                dork = f'site:linkedin.com/in ("Talent" OR "Recruiter" OR "HR" OR "People") {term}'
+                results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                if not results:
+                    fallback_dork = f'site:linkedin.com/in {term} Talent OR HR'
+                    results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
+                raw_search_items.extend(results)
 
-        if RoleCategory.C_SUITE in target_roles:
-            c_suite_dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Co-Founder" OR "Chief" OR "Director" OR "CTO" OR "COO" OR "CFO") {company_query_term}'
-            c_results = self.search_engine.query(c_suite_dork, max_results=self.max_leads_per_role)
-            if not c_results:
-                # Resilient fallback: simplified keywords without complex boolean grouping
-                fallback_dork = f'site:linkedin.com/in {name} CEO OR Founder'
-                c_results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
-            raw_search_items.extend(c_results)
-
-        if RoleCategory.HR_TALENT in target_roles:
-            hr_dork = f'site:linkedin.com/in ("Talent Acquisition" OR "Head of Talent" OR "Recruiter" OR "HR" OR "People Ops") {company_query_term}'
-            hr_results = self.search_engine.query(hr_dork, max_results=self.max_leads_per_role)
-            if not hr_results:
-                # Resilient fallback: simplified keywords
-                fallback_dork = f'site:linkedin.com/in {name} Talent OR Recruiter OR HR'
-                hr_results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
-            raw_search_items.extend(hr_results)
-
-        # Step 3: Extract Leads
-        extracted_leads = LeadExtractor.extract_leads(
+        # Step 4: Extract Leads from Search Results
+        search_leads = LeadExtractor.extract_leads(
             search_results=raw_search_items,
             company_name=company_info.clean_name,
             domain=company_info.domain,
             target_roles=target_roles,
         )
+
+        # Merge deduplicated leads
+        for sl in search_leads:
+            name_key = f"{sl.first_name.lower()} {sl.last_name.lower()}"
+            if name_key not in seen_names and sl.linkedin_url not in seen_urls:
+                extracted_leads.append(sl)
+                seen_names.add(name_key)
+                if sl.linkedin_url:
+                    seen_urls.add(sl.linkedin_url)
+
 
         # Step 4: MX Lookup & Fingerprinting
         mx_info: Optional[MXInfo] = None

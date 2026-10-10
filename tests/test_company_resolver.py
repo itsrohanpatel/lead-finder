@@ -13,7 +13,7 @@ def test_resolve_from_domain():
 def test_resolve_from_url():
     info = CompanyResolver.resolve("https://www.openai.com/about/")
     assert info.domain == "openai.com"
-    assert info.clean_name == "Openai"
+    assert info.clean_name.lower() == "openai"
 
 
 def test_resolve_from_linkedin_company():

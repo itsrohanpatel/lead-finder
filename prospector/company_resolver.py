@@ -1,8 +1,10 @@
 """Company input resolver and normalizer."""
 
 import re
+import requests
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 from prospector.models import CompanyInfo
 
 
@@ -34,6 +36,64 @@ class CompanyResolver:
         # Clean trailing commas/dashes/periods
         cleaned = re.sub(r"[\s,\-\.]+$", "", cleaned).strip()
         return cleaned or name.strip()
+
+    @classmethod
+    def enrich_from_website(cls, domain: str) -> Tuple[Optional[str], Optional[str], List[Dict[str, Any]]]:
+        """Fetch homepage and extract official trade name, LinkedIn company page, and direct team profiles."""
+        url = f"https://{domain}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        trade_name = None
+        linkedin_company = None
+        team_leads: List[Dict[str, Any]] = []
+        try:
+            resp = requests.get(url, headers=headers, timeout=3.5)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+
+                # 1. Clean Title Name
+                if soup.title and soup.title.string:
+                    title_text = soup.title.string.strip()
+                    parts = re.split(r"[-|:•–—]", title_text)
+                    candidate = parts[0].strip()
+                    if any(term in candidate.lower() for term in ["consultancy", "solutions", "services", "human resource", "home"]) and len(parts) > 1:
+                        candidate = parts[-1].strip()
+                    candidate = cls.clean_company_name(candidate)
+                    if candidate and len(candidate) <= 35:
+                        trade_name = candidate
+
+                # 2. LinkedIn company page
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if "linkedin.com/company/" in href:
+                        linkedin_company = href.split("?")[0].rstrip("/")
+                        break
+
+                # 3. Direct LinkedIn personal profiles
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if "linkedin.com/in/" in href:
+                        clean_url = href.split("?")[0].rstrip("/")
+                        name = a.get_text(strip=True)
+                        if not name and a.parent:
+                            name = a.parent.get_text(strip=True)
+                        if not name and a.parent and a.parent.parent:
+                            gp_text = a.parent.parent.get_text(separator=" ", strip=True)
+                            m = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", gp_text)
+                            if m:
+                                name = m.group(1).strip()
+                        if name and len(name.split()) in [2, 3]:
+                            if not any(bad in name.lower() for bad in ["linkedin", "follow", "share", "view", "connect"]):
+                                team_leads.append({
+                                    "name": name,
+                                    "linkedin_url": clean_url,
+                                    "job_title": "Founder / Leadership",
+                                })
+        except Exception:
+            pass
+
+        return trade_name, linkedin_company, team_leads
 
     @classmethod
     def extract_domain_from_url(cls, url_or_domain: str) -> Optional[str]:
@@ -95,16 +155,20 @@ class CompanyResolver:
         # Case 2: Looks like a domain or website URL
         extracted_domain = cls.extract_domain_from_url(raw)
         if extracted_domain and not (" " in raw and "." not in raw.split()[0]):
-            # Name derived from domain SLD (e.g. stripe.com -> Stripe)
+            # Baseline name derived from domain SLD
             parts = extracted_domain.split(".")
-            # Handle co.uk, com.au, etc.
             sld = parts[-2] if len(parts) > 2 and parts[-2] in {"co", "com", "org", "net", "gov"} else parts[0]
             clean_name = sld.replace("-", " ").capitalize()
+
+            # Attempt live website metadata enrichment
+            trade_name, li_company, direct_leads = cls.enrich_from_website(extracted_domain)
+            final_name = trade_name or clean_name
             return CompanyInfo(
                 raw_input=raw,
-                clean_name=clean_name,
+                clean_name=final_name,
                 domain=extracted_domain,
-                linkedin_company_url=None,
+                linkedin_company_url=li_company,
+                direct_website_leads=direct_leads,
             )
 
         # Case 3: Raw company name
