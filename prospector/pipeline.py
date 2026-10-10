@@ -61,7 +61,12 @@ class ProspectorPipeline:
         # Build smart company name variations (e.g. tigihr -> "tigihr" OR "TIGI HR")
         name_variations = [f'"{name}"']
         name_lower = name.lower()
-        if name_lower.endswith("hr") and len(name) > 2:
+        if name_lower.endswith("hrm") and len(name) > 3:
+            base = name[:-3].strip()
+            name_variations.append(f'"{base.upper()} HR"')
+            name_variations.append(f'"{base.upper()} HRM"')
+            name_variations.append(f'"{base.upper()} HR Management"')
+        elif name_lower.endswith("hr") and len(name) > 2:
             base = name[:-2].strip()
             name_variations.append(f'"{base.upper()} HR"')
             name_variations.append(f'"{base.title()} HR"')
@@ -88,11 +93,19 @@ class ProspectorPipeline:
         if RoleCategory.C_SUITE in target_roles:
             c_suite_dork = f'site:linkedin.com/in ("CEO" OR "Founder" OR "Co-Founder" OR "Chief" OR "Director" OR "CTO" OR "COO" OR "CFO") {company_query_term}'
             c_results = self.search_engine.query(c_suite_dork, max_results=self.max_leads_per_role)
+            if not c_results:
+                # Resilient fallback: simplified keywords without complex boolean grouping
+                fallback_dork = f'site:linkedin.com/in {name} CEO OR Founder'
+                c_results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
             raw_search_items.extend(c_results)
 
         if RoleCategory.HR_TALENT in target_roles:
             hr_dork = f'site:linkedin.com/in ("Talent Acquisition" OR "Head of Talent" OR "Recruiter" OR "HR" OR "People Ops") {company_query_term}'
             hr_results = self.search_engine.query(hr_dork, max_results=self.max_leads_per_role)
+            if not hr_results:
+                # Resilient fallback: simplified keywords
+                fallback_dork = f'site:linkedin.com/in {name} Talent OR Recruiter OR HR'
+                hr_results = self.search_engine.query(fallback_dork, max_results=self.max_leads_per_role)
             raw_search_items.extend(hr_results)
 
         # Step 3: Extract Leads

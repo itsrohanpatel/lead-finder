@@ -19,20 +19,27 @@ class SearchEngine:
     def __init__(self, serper_api_key: Optional[str] = None):
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
 
-    def search_duckduckgo(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:
-        """Search using DuckDuckGo via DDGS text search."""
+    def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 2) -> List[Dict[str, Any]]:
+        """Search using DuckDuckGo via DDGS text search with automatic backoff retry."""
         results: List[Dict[str, Any]] = []
-        try:
-            with DDGS() as ddgs:
-                raw_results = ddgs.text(query, max_results=max_results)
-                for item in raw_results:
-                    results.append({
-                        "title": item.get("title", ""),
-                        "link": item.get("href", ""),
-                        "snippet": item.get("body", ""),
-                    })
-        except Exception as exc:
-            logger.warning(f"DuckDuckGo search error: {exc}")
+        for attempt in range(retries + 1):
+            try:
+                with DDGS() as ddgs:
+                    raw_results = ddgs.text(query, max_results=max_results)
+                    for item in raw_results:
+                        results.append({
+                            "title": item.get("title", ""),
+                            "link": item.get("href", ""),
+                            "snippet": item.get("body", ""),
+                        })
+                break
+            except Exception as exc:
+                if "no results found" in str(exc).lower():
+                    # 0 search matches is normal, do not retry
+                    break
+                logger.warning(f"DuckDuckGo search attempt {attempt+1} error: {exc}")
+                if attempt < retries:
+                    time.sleep(1.0)
         return results
 
     def search_serper(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:

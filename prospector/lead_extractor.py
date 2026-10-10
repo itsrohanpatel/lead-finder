@@ -157,6 +157,24 @@ class LeadExtractor:
             if any(bad in name.lower() for bad in ["linkedin", "profiles", "directory", "jobs"]):
                 continue
 
+            # Verify company affiliation in title or snippet to prevent false attribution
+            item_text = (title + " " + item.get("snippet", "")).lower()
+            company_kw = company_name.lower()
+            domain_sld = domain.split(".")[0].lower() if domain else ""
+            
+            has_affiliation = (company_kw in item_text) or (domain_sld and domain_sld in item_text)
+            if not has_affiliation and company_kw.endswith("hrm") and len(company_kw) > 3:
+                prefix = company_kw[:-3]
+                if prefix in item_text and "hr" in item_text:
+                    has_affiliation = True
+            elif not has_affiliation and company_kw.endswith("hr") and len(company_kw) > 2:
+                prefix = company_kw[:-2]
+                if prefix in item_text and "hr" in item_text:
+                    has_affiliation = True
+
+            if not has_affiliation and len(company_name) > 2:
+                continue
+
             first_name, last_name = cls.split_name(name)
             if not first_name:
                 continue
