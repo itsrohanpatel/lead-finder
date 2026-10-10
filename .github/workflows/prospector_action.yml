@@ -1,0 +1,82 @@
+name: Prospector-AI Serverless Lead Harvester
+
+on:
+  workflow_dispatch:
+    inputs:
+      company:
+        description: 'Target company domain (e.g. stripe.com), name, or LinkedIn URL'
+        required: true
+        type: string
+        default: 'stripe.com'
+      roles:
+        description: 'Target roles'
+        required: true
+        type: choice
+        options:
+          - all
+          - c-suite
+          - hr
+        default: 'all'
+      output_format:
+        description: 'Output format'
+        required: true
+        type: choice
+        options:
+          - csv
+          - json
+          - table
+        default: 'csv'
+      no_smtp:
+        description: 'Disable raw SMTP port 25 check (Recommended on cloud runners)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  prospect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Prospector Pipeline
+        run: |
+          EXTRA_ARGS=""
+          if [ "${{ inputs.no_smtp }}" = "true" ]; then
+            EXTRA_ARGS="--no-smtp"
+          fi
+          
+          python -m prospector.cli "${{ inputs.company }}" \
+            --roles "${{ inputs.roles }}" \
+            --format "${{ inputs.output_format }}" \
+            --output "prospects.${{ inputs.output_format }}" \
+            $EXTRA_ARGS
+
+      - name: Upload Lead Artifact
+        if: inputs.output_format != 'table'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lead-results
+          path: prospects.${{ inputs.output_format }}
+
+      - name: Display Summary
+        run: |
+          echo "### 🎯 Prospector-AI Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ inputs.company }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Roles**: ${{ inputs.roles }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Format**: ${{ inputs.output_format }}" >> $GITHUB_STEP_SUMMARY
+          echo "Lead artifact successfully generated and ready for download." >> $GITHUB_STEP_SUMMARY
