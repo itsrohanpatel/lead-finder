@@ -64,6 +64,7 @@ jobs:
             --roles "${{ inputs.roles }}" \
             --format "${{ inputs.output_format }}" \
             --output "prospects.${{ inputs.output_format }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
             $EXTRA_ARGS
 
       - name: Upload Lead Artifact
@@ -73,10 +74,7 @@ jobs:
           name: lead-results
           path: prospects.${{ inputs.output_format }}
 
-      - name: Display Summary
+      - name: Display Summary Info
         run: |
-          echo "### 🎯 Prospector-AI Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target**: ${{ inputs.company }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Roles**: ${{ inputs.roles }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Format**: ${{ inputs.output_format }}" >> $GITHUB_STEP_SUMMARY
-          echo "Lead artifact successfully generated and ready for download." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 📦 **Download Artifact**: Discovered leads are packaged and downloadable from the Artifacts section above." >> $GITHUB_STEP_SUMMARY

@@ -85,6 +85,55 @@ def render_results_table(result: ProspectorResult) -> None:
     console.print(table)
 
 
+def generate_markdown_summary(result: ProspectorResult) -> str:
+    """Generate a GitHub Flavored Markdown summary table for the result."""
+    company_name = result.company.clean_name
+    domain = result.company.domain or "N/A"
+    provider = result.mx_info.provider if result.mx_info else "Unknown"
+    catch_all = "Yes" if (result.mx_info and result.mx_info.is_catch_all) else "No"
+
+    lines = [
+        "### 🎯 Prospector-AI Lead Discovery Summary",
+        "",
+        f"- **Company**: {company_name}",
+        f"- **Domain**: `{domain}`",
+        f"- **Mail Server / Provider**: `{provider}` (Catch-All: {catch_all})",
+        f"- **Total Prospects**: **{result.total_leads}** ({result.c_suite_count} C-Suite, {result.hr_count} HR/Talent, {result.tech_count} Tech, {result.product_count} Product) in {result.execution_time_sec}s",
+        "",
+    ]
+
+    if not result.leads:
+        lines.append("> ⚠️ **No leads matching the specified criteria were discovered.**")
+        return "\n".join(lines) + "\n"
+
+    lines.extend([
+        "#### 👥 Discovered Prospects",
+        "",
+        "| Category | Full Name | Job Title | Location | Best Email | Confidence | LinkedIn |",
+        "| :--- | :--- | :--- | :--- | :--- | :---: | :--- |",
+    ])
+
+    for lead in result.leads:
+        cat_badge = {
+            RoleCategory.C_SUITE: "🔴 **C-Suite**",
+            RoleCategory.HR_TALENT: "🔵 **HR/Talent**",
+            RoleCategory.TECH_LEAD: "🟡 **Tech/Eng**",
+            RoleCategory.PRODUCT: "🟣 **Product**",
+        }.get(lead.role_category, "⚪ **Other**")
+
+        conf_pct = f"{int(lead.email_confidence * 100)}%"
+        email_str = f"`{lead.best_email}`" if lead.best_email else "*N/A*"
+        loc_str = lead.location or "*N/A*"
+        li_link = f"[Profile]({lead.linkedin_url})" if lead.linkedin_url else "*Website*"
+
+        lines.append(
+            f"| {cat_badge} | **{lead.full_name}** | {lead.job_title} | {loc_str} | {email_str} | {conf_pct} | {li_link} |"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def export_csv(results: List[ProspectorResult], filepath: str) -> None:
     """Export leads across all processed companies to CSV."""
     with open(filepath, "w", newline="", encoding="utf-8") as f:
@@ -177,6 +226,10 @@ def main() -> None:
         help="Max leads per role category (default: 10)",
     )
     parser.add_argument(
+        "--summary-file",
+        help="Optional path to write GitHub Flavored Markdown summary (auto-detects GITHUB_STEP_SUMMARY)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -213,6 +266,17 @@ def main() -> None:
     elif args.format == "json":
         out_path = args.output or f"{result.company.clean_name.lower()}_leads.json"
         export_json([result], out_path)
+
+    # Write GitHub Flavored Markdown summary if requested or running in GitHub Actions
+    summary_target = args.summary_file or os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_target:
+        try:
+            summary_content = generate_markdown_summary(result)
+            with open(summary_target, "a", encoding="utf-8") as f:
+                f.write(summary_content + "\n")
+            console.print(f"[bold green][+] Appended Markdown summary to:[/bold green] {summary_target}")
+        except Exception as e:
+            logging.warning(f"Failed writing markdown summary to {summary_target}: {e}")
 
 
 if __name__ == "__main__":
