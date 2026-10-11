@@ -30,6 +30,7 @@ class SearchEngine:
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
         self._ddgs_client = None
+        self.html_provider = None
         self._cache: Dict[str, List[Dict[str, Any]]] = {}
         self._init_ddgs_client()
 
@@ -43,7 +44,7 @@ class SearchEngine:
             self._ddgs_client = None
 
     def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
-        """Search using Yahoo via DDGS with clean error handling and no toxic backend fallback."""
+        """Search using Bing/Yahoo via DDGS with direct HTML fallback and exponential backoff."""
         if query in self._cache:
             return self._cache[query]
 
@@ -59,38 +60,58 @@ class SearchEngine:
                     self._init_ddgs_client()
 
                 client = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
-                if not client:
-                    break
 
-                # Query Yahoo backend (high fidelity for site:linkedin.com/in)
                 raw_results = []
-                try:
-                    raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
-                except Exception as y_err:
-                    logger.debug(f"Yahoo search error: {y_err}, falling back to html")
-                    self._init_ddgs_client()
+                # 1. Primary backend: Bing via DDGS (robust and non-throttled on cloud runners)
+                if client:
+                    try:
+                        raw_results = list(client.text(query, backend="bing", max_results=max_results))
+                    except Exception as b_err:
+                        logger.debug(f"Bing search error: {b_err}")
 
-                # Robust fallback to DuckDuckGo HTML engine if Yahoo returned 0 results
+                # 2. Secondary backend: Yahoo via DDGS if Bing returned 0
+                if not raw_results and client:
+                    try:
+                        raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
+                    except Exception as y_err:
+                        logger.debug(f"Yahoo search error: {y_err}")
+
+                # 3. Tertiary backend: Direct DDG HTML search provider
                 if not raw_results:
                     try:
-                        client_fb = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
-                        if client_fb:
-                            raw_results = list(client_fb.text(query, backend="html", max_results=max_results))
+                        if not self.html_provider:
+                            from prospector.ddg_html_provider import DDGHtmlSearchProvider
+                            self.html_provider = DDGHtmlSearchProvider()
+                        raw_results = self.html_provider.query(query, max_results=max_results)
                     except Exception as fb_err:
-                        logger.debug(f"HTML fallback error: {fb_err}")
+                        logger.debug(f"Direct DDG HTML fallback error: {fb_err}")
 
                 for item in raw_results:
-                    results.append({
-                        "title": item.get("title", ""),
-                        "link": item.get("href", ""),
-                        "snippet": item.get("body", ""),
-                    })
-                break
+                    link = item.get("link") or item.get("href") or ""
+                    snippet = item.get("snippet") or item.get("body") or ""
+                    title = item.get("title") or ""
+                    if link and not any(r["link"] == link for r in results):
+                        results.append({
+                            "title": title,
+                            "link": link,
+                            "snippet": snippet,
+                        })
+
+                # If we successfully collected results, break out of retry loop
+                if results:
+                    break
+
+                # If no results found, back off and retry
+                if attempt < retries:
+                    logger.debug(f"Attempt {attempt+1} yielded 0 results, retrying with backoff...")
+                    self._init_ddgs_client()
+                    time.sleep(1.5 * (attempt + 1))
             except Exception as exc:
                 logger.warning(f"Search attempt {attempt+1} error: {exc}")
                 self._init_ddgs_client()
                 if attempt < retries:
-                    time.sleep(1.0 * (attempt + 1))
+                    time.sleep(1.5 * (attempt + 1))
+
         if results:
             self._cache[query] = results
         return results
