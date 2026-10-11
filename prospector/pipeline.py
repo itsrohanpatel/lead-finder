@@ -3,7 +3,7 @@
 import re
 import time
 import logging
-from typing import List, Optional
+from typing import List, Optional, Any, Callable
 from prospector.models import (
     CompanyInfo,
     LeadRecord,
@@ -296,3 +296,45 @@ class ProspectorPipeline:
             total_leads=len(enriched_leads),
             execution_time_sec=elapsed,
         )
+
+    def run_batch(
+        self,
+        company_inputs: List[str],
+        max_workers: int = 3,
+        on_complete: Optional[Any] = None,
+        **kwargs,
+    ) -> List[ProspectorResult]:
+        """Execute prospecting workflow for multiple companies concurrently.
+
+        Uses ThreadPoolExecutor to achieve significant speedups on batch discovery
+        while isolating exceptions per target to guarantee zero run aborts.
+        """
+        import concurrent.futures
+
+        results: List[ProspectorResult] = []
+        if not company_inputs:
+            return results
+
+        max_workers = max(1, min(max_workers, len(company_inputs)))
+        logger.info(f"Dispatching batch of {len(company_inputs)} companies across {max_workers} worker threads.")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_company = {
+                executor.submit(self.run, comp, **kwargs): comp
+                for comp in company_inputs
+            }
+            for future in concurrent.futures.as_completed(future_to_company):
+                comp = future_to_company[future]
+                try:
+                    res = future.result()
+                    if res:
+                        results.append(res)
+                        if on_complete:
+                            try:
+                                on_complete(res)
+                            except Exception as cb_err:
+                                logger.debug(f"on_complete callback error for {comp}: {cb_err}")
+                except Exception as exc:
+                    logger.error(f"Error prospecting batch target '{comp}': {exc}", exc_info=True)
+
+        return results

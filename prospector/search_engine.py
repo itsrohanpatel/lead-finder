@@ -30,6 +30,7 @@ class SearchEngine:
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
         self._ddgs_client = None
+        self.bing_provider = None
         self.html_provider = None
         self._cache: Dict[str, List[Dict[str, Any]]] = {}
         self._init_ddgs_client()
@@ -38,43 +39,44 @@ class SearchEngine:
         """Initialize or reset persistent DDGS client with higher timeout for cloud networks."""
         try:
             if DDGS:
-                self._ddgs_client = DDGS(timeout=15)
+                self._ddgs_client = DDGS(timeout=10)
         except Exception as e:
             logger.debug(f"Could not initialize persistent DDGS client: {e}")
             self._ddgs_client = None
 
     def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
-        """Search using Bing/Yahoo via DDGS with direct HTML fallback and exponential backoff."""
+        """Search using fast direct Bing as primary, with Yahoo and DDG HTML fallbacks and backoff."""
         if query in self._cache:
             return self._cache[query]
 
         results: List[Dict[str, Any]] = []
 
-        # Polite inter-query pacing to avoid cloud runner edge socket terminations
-        time.sleep(0.7)
+        # Polite inter-query pacing
+        time.sleep(0.4)
 
         for attempt in range(retries + 1):
             try:
-                # Ensure client is ready
-                if self._ddgs_client is None:
-                    self._init_ddgs_client()
-
-                client = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
-
                 raw_results = []
-                # 1. Primary backend: Bing via DDGS (robust and non-throttled on cloud runners)
-                if client:
-                    try:
-                        raw_results = list(client.text(query, backend="bing", max_results=max_results))
-                    except Exception as b_err:
-                        logger.debug(f"Bing search error: {b_err}")
+
+                # 1. Primary backend: Fast Direct Bing Web Provider (<1s, Azure native, zero third-party blocks)
+                try:
+                    if not self.bing_provider:
+                        from prospector.bing_web_provider import BingWebSearchProvider
+                        self.bing_provider = BingWebSearchProvider()
+                    raw_results = self.bing_provider.query(query, max_results=max_results)
+                except Exception as b_err:
+                    logger.debug(f"Direct Bing search error: {b_err}")
 
                 # 2. Secondary backend: Yahoo via DDGS if Bing returned 0
-                if not raw_results and client:
-                    try:
-                        raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
-                    except Exception as y_err:
-                        logger.debug(f"Yahoo search error: {y_err}")
+                if not raw_results:
+                    if self._ddgs_client is None:
+                        self._init_ddgs_client()
+                    client = self._ddgs_client or (DDGS(timeout=10) if DDGS else None)
+                    if client:
+                        try:
+                            raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
+                        except Exception as y_err:
+                            logger.debug(f"Yahoo search error: {y_err}")
 
                 # 3. Tertiary backend: Direct DDG HTML search provider
                 if not raw_results:

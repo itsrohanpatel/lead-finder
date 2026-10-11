@@ -69,7 +69,9 @@ def test_search_engine_fallback_chain():
     """Verify that if primary DDGS backends fail or return empty, the direct HTML provider is invoked."""
     engine = SearchEngine()
 
-    # Mock ddgs client to return empty for both bing and yahoo
+    # Mock bing provider and ddgs client to return empty
+    engine.bing_provider = MagicMock()
+    engine.bing_provider.query.return_value = []
     engine._ddgs_client = MagicMock()
     engine._ddgs_client.text.return_value = []
 

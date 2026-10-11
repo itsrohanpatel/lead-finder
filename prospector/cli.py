@@ -233,6 +233,13 @@ def main() -> None:
         help="Optional path to write GitHub Flavored Markdown summary (auto-detects GITHUB_STEP_SUMMARY)",
     )
     parser.add_argument(
+        "--concurrency",
+        "-c",
+        type=int,
+        default=3,
+        help="Number of concurrent worker threads for multi-domain batches (default: 3)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -267,18 +274,23 @@ def main() -> None:
     pipeline = ProspectorPipeline(check_smtp=not args.no_smtp, max_leads_per_role=args.max_leads)
     all_results: List[ProspectorResult] = []
 
-    for idx, target in enumerate(raw_targets):
-        if idx > 0:
-            import time
-            time.sleep(1.5)  # Polite pacing between multiple domains
-
+    if len(raw_targets) > 1:
+        console.print(f"[bold cyan][*] Dispatching {len(raw_targets)} domains concurrently across {args.concurrency} workers...[/bold cyan]")
+        all_results = pipeline.run_batch(
+            raw_targets,
+            max_workers=args.concurrency,
+            on_complete=render_results_table,
+            target_roles=roles,
+            location=args.location,
+        )
+    else:
         try:
-            result = pipeline.run(target, target_roles=roles, location=args.location)
+            result = pipeline.run(raw_targets[0], target_roles=roles, location=args.location)
             all_results.append(result)
             render_results_table(result)
         except Exception as e:
-            logging.error(f"Error processing target '{target}': {e}")
-            console.print(f"[bold red][!] Error processing {target}:[/bold red] {e}")
+            logging.error(f"Error processing target '{raw_targets[0]}': {e}")
+            console.print(f"[bold red][!] Error processing {raw_targets[0]}:[/bold red] {e}")
 
     if not all_results:
         return
