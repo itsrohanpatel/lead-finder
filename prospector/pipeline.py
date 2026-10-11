@@ -151,7 +151,7 @@ class ProspectorPipeline:
 
         # Execute queries per target role and term (up to 3 unique terms, case-normalized)
         seen_query_terms = set()
-        for term in unique_terms[:3]:
+        for idx, term in enumerate(unique_terms[:3]):
             t_clean = term.strip()
             if t_clean.lower() in seen_query_terms:
                 continue
@@ -173,41 +173,44 @@ class ProspectorPipeline:
             if base_results:
                 raw_search_items.extend(base_results)
 
+            c_kws = ["CEO", "Founder", "Director"] if idx == 0 else ["CEO", "Founder"]
+            hr_kws = ["HR", "Talent", "People", "Hiring"] if idx == 0 else ["HR", "Talent"]
+
             if RoleCategory.C_SUITE in target_roles:
-                for role_kw in ["CEO", "Founder", "Director"]:
+                for role_kw in c_kws:
                     dork = f"site:linkedin.com/in {term_q} {role_kw}"
                     results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
                     if results:
                         raw_search_items.extend(results)
-                    if loc_suffix:
+                    if loc_suffix and idx == 0:
                         dork_loc = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
                         results_loc = self.search_engine.query(dork_loc, max_results=self.max_leads_per_role)
                         if results_loc:
                             raw_search_items.extend(results_loc)
 
             if RoleCategory.HR_TALENT in target_roles:
-                hr_kws = ["HR", "Talent", "People", "Hiring"]
                 for role_kw in hr_kws:
                     dork = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
                     results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
                     if results:
                         raw_search_items.extend(results)
 
-            if RoleCategory.TECH_LEAD in target_roles:
-                tech_kws = ["Tech Lead", "Founding Engineer", "Head of Engineering", "Engineering Lead", "Software Engineer"]
-                for role_kw in tech_kws:
-                    dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                    if results:
-                        raw_search_items.extend(results)
+            if idx == 0:
+                if RoleCategory.TECH_LEAD in target_roles:
+                    tech_kws = ["Tech Lead", "Founding Engineer", "Head of Engineering", "Engineering Lead", "Software Engineer"]
+                    for role_kw in tech_kws:
+                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
+                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                        if results:
+                            raw_search_items.extend(results)
 
-            if RoleCategory.PRODUCT in target_roles:
-                prod_kws = ["Head of Product", "Product Manager", "Product Lead"]
-                for role_kw in prod_kws:
-                    dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                    if results:
-                        raw_search_items.extend(results)
+                if RoleCategory.PRODUCT in target_roles:
+                    prod_kws = ["Head of Product", "Product Manager", "Product Lead"]
+                    for role_kw in prod_kws:
+                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
+                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                        if results:
+                            raw_search_items.extend(results)
 
         # Step 4: Extract Leads from Search Results
         search_leads = LeadExtractor.extract_leads(
