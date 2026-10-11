@@ -70,6 +70,15 @@ class SearchEngine:
                     logger.debug(f"Yahoo search error: {y_err}")
                     self._init_ddgs_client()
 
+                # Fallback to html backend if Yahoo returns 0 results (essential for cloud runners where Yahoo blocks datacenter IPs)
+                if not raw_results:
+                    try:
+                        client_fb = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
+                        if client_fb:
+                            raw_results = list(client_fb.text(query, backend="html", max_results=max_results))
+                    except Exception as fb_err:
+                        logger.debug(f"HTML fallback error: {fb_err}")
+
                 for item in raw_results:
                     results.append({
                         "title": item.get("title", ""),
