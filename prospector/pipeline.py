@@ -157,6 +157,23 @@ class ProspectorPipeline:
                 continue
             seen_query_terms.add(t_clean.lower())
 
+            # Adaptive Saturation Gate: If primary high-signal trade name already yielded sufficient
+            # verified leads, skip secondary low-signal acronym loops to maximize throughput
+            if idx > 0 and len(raw_search_items) >= 12:
+                interim_leads = LeadExtractor.extract_leads(
+                    search_results=raw_search_items,
+                    company_name=company_info.clean_name,
+                    domain=company_info.domain,
+                    target_roles=target_roles,
+                    location=location,
+                )
+                if len(interim_leads) >= 5:
+                    logger.info(
+                        f"Adaptive Saturation Gate: {len(interim_leads)} verified leads identified from '{unique_terms[0]}'. "
+                        f"Skipping redundant secondary term loops."
+                    )
+                    break
+
             loc_suffix = ""
             if location:
                 loc_clean = location.strip()
@@ -182,11 +199,6 @@ class ProspectorPipeline:
                     results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
                     if results:
                         raw_search_items.extend(results)
-                    if loc_suffix and idx == 0:
-                        dork_loc = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
-                        results_loc = self.search_engine.query(dork_loc, max_results=self.max_leads_per_role)
-                        if results_loc:
-                            raw_search_items.extend(results_loc)
 
             if RoleCategory.HR_TALENT in target_roles:
                 for role_kw in hr_kws:

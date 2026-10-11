@@ -67,17 +67,8 @@ class SearchEngine:
                 try:
                     raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
                 except Exception as y_err:
-                    logger.debug(f"Yahoo search error: {y_err}, falling back to html")
+                    logger.debug(f"Yahoo search error: {y_err}")
                     self._init_ddgs_client()
-
-                # Robust fallback to DuckDuckGo HTML engine if Yahoo returned 0 results
-                if not raw_results:
-                    try:
-                        client_fb = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
-                        if client_fb:
-                            raw_results = list(client_fb.text(query, backend="html", max_results=max_results))
-                    except Exception as fb_err:
-                        logger.debug(f"HTML fallback error: {fb_err}")
 
                 for item in raw_results:
                     results.append({

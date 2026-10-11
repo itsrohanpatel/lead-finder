@@ -545,30 +545,10 @@ class LeadExtractor:
             if any(bad in name.lower() for bad in ["linkedin", "profiles", "directory", "jobs", "hiring", "careers"]):
                 continue
 
-            # Reject if candidate name matches company or brand token (e.g. 'Avyam Labs', 'EVEOAI Private Limited')
+            # Reject if candidate name matches company (e.g. 'Avyam Labs', 'EVEOAI Private Limited')
             compact_name = re.sub(r"[^a-z0-9]", "", name.lower())
-            if brand_tokens and any(t == compact_name or compact_name.startswith(t) for t in brand_tokens):
-                continue
-
-            # 1. Check if headline states an explicit employer
-            explicit_emp = cls.extract_explicit_employer(first_chunk)
-            if explicit_emp:
-                if not cls.employer_matches_company(explicit_emp, company_name, domain):
-                    continue
-
-            # 2. Verify brand token presence in person's headline or immediate snippet header
-            c_chunk = re.sub(r"[^a-z0-9]", "", first_chunk.lower())
-            chunk_has_brand = any(token in c_chunk for token in brand_tokens) if brand_tokens else True
-
-            # If headline doesn't explicitly have the brand token, inspect only the first 120 chars
-            # of snippet to avoid cross-profile leakage from search engine clustering
-            snippet_has_brand = False
-            if not chunk_has_brand and brand_tokens:
-                snippet_head = item.get("snippet", "")[:120].lower()
-                c_snip_head = re.sub(r"[^a-z0-9]", "", snippet_head)
-                snippet_has_brand = any(token in c_snip_head for token in brand_tokens)
-
-            if not (chunk_has_brand or snippet_has_brand) and len(company_name) > 2:
+            c_comp = re.sub(r"[^a-z0-9]", "", company_name.lower())
+            if compact_name == c_comp:
                 continue
 
             first_name, last_name = cls.split_name(name)
@@ -577,6 +557,46 @@ class LeadExtractor:
 
             name_key = f"{first_name.lower()} {last_name.lower()}"
             if name_key in seen_names:
+                continue
+
+            # 1. Check if headline states an explicit employer
+            explicit_emp = cls.extract_explicit_employer(first_chunk)
+            emp_verified = False
+            if explicit_emp:
+                if cls.employer_matches_company(explicit_emp, company_name, domain):
+                    emp_verified = True
+                else:
+                    continue
+
+            # 2. Verify brand token presence in person's headline or immediate snippet header
+            if emp_verified:
+                chunk_has_brand = True
+            else:
+                # Strip candidate's own name to prevent self-name false matches (e.g. surname 'Jain' matching brand token 'jain')
+                non_name_chunk = first_chunk
+                if name:
+                    non_name_chunk = re.sub(r"\b" + re.escape(name) + r"\b", "", non_name_chunk, flags=re.IGNORECASE)
+                if first_name:
+                    non_name_chunk = re.sub(r"\b" + re.escape(first_name) + r"\b", "", non_name_chunk, flags=re.IGNORECASE)
+                if last_name:
+                    non_name_chunk = re.sub(r"\b" + re.escape(last_name) + r"\b", "", non_name_chunk, flags=re.IGNORECASE)
+
+                c_chunk = re.sub(r"[^a-z0-9]", "", non_name_chunk.lower())
+                chunk_has_brand = any(token in c_chunk for token in brand_tokens) if brand_tokens else True
+
+            # If headline doesn't explicitly have the brand token, inspect only the first 140 chars
+            # of snippet (excluding candidate name) to avoid cross-profile leakage from search engine clustering
+            snippet_has_brand = False
+            if not chunk_has_brand and brand_tokens:
+                snippet_head = item.get("snippet", "")[:140]
+                if name:
+                    snippet_head = re.sub(r"\b" + re.escape(name) + r"\b", "", snippet_head, flags=re.IGNORECASE)
+                if last_name:
+                    snippet_head = re.sub(r"\b" + re.escape(last_name) + r"\b", "", snippet_head, flags=re.IGNORECASE)
+                c_snip_head = re.sub(r"[^a-z0-9]", "", snippet_head.lower())
+                snippet_has_brand = any(token in c_snip_head for token in brand_tokens)
+
+            if not (chunk_has_brand or snippet_has_brand) and len(company_name) > 2:
                 continue
 
             role_cat = cls.categorize_role(job_title)

@@ -53,6 +53,23 @@ LOCATION_ALIASES = {
 }
 
 
+GENERIC_TERMS = [
+    "digital marketing", "marketing agency", "seo agency", "web development",
+    "software company", "software development", "it services", "it company",
+    "consultancy", "consulting", "solutions", "services", "human resource",
+    "staffing", "recruitment", "home", "about us", "welcome", "official website",
+    "design studio", "creative agency", "tech lab", "technologies",
+    "google partner", "premier google partner", "meta partner", "meta business partner",
+    "aws partner", "microsoft partner", "certified partner", "solution partner",
+    "premier partner", "platinum partner", "gold partner", "badge", "partner", "partners",
+    "business partner", "advanced partner",
+    "india", "usa", "united states", "uk", "united kingdom", "australia", "canada",
+    "singapore", "uae", "dubai", "global", "contact", "privacy policy",
+    "one moment", "just a moment", "attention required", "cloudflare", "security check",
+    "robot check", "access denied", "ddos-guard", "checking your browser", "please enable"
+]
+
+
 class CompanyResolver:
     """Normalizes and resolves domain, company name, and LinkedIn URL."""
 
@@ -100,22 +117,19 @@ class CompanyResolver:
         linkedin_company = None
         team_leads: List[Dict[str, Any]] = []
 
-        GENERIC_TERMS = [
-            "digital marketing", "marketing agency", "seo agency", "web development",
-            "software company", "software development", "it services", "it company",
-            "consultancy", "consulting", "solutions", "services", "human resource",
-            "staffing", "recruitment", "home", "about us", "welcome", "official website",
-            "design studio", "creative agency", "tech lab", "technologies",
-            "india", "usa", "united states", "uk", "united kingdom", "australia", "canada",
-            "singapore", "uae", "dubai", "global", "contact", "privacy policy",
-            "one moment", "just a moment", "attention required", "cloudflare", "security check",
-            "robot check", "access denied", "ddos-guard", "checking your browser", "please enable"
-        ]
-
         try:
-            resp = requests.get(url, headers=headers, timeout=3.5)
+            resp = requests.get(url, headers=headers, timeout=2.5, stream=True)
             if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, "html.parser")
+                content_chunks = []
+                total_bytes = 0
+                for chunk in resp.iter_content(chunk_size=16384):
+                    content_chunks.append(chunk)
+                    total_bytes += len(chunk)
+                    if total_bytes >= 65536 or b"</head>" in chunk.lower():
+                        break
+                resp.close()
+                raw_html = b"".join(content_chunks).decode("utf-8", errors="replace")
+                soup = BeautifulSoup(raw_html, "html.parser")
 
                 # 1. Clean Title Name
                 if soup.title and soup.title.string:
