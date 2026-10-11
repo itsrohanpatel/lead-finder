@@ -144,6 +144,12 @@ class ProspectorPipeline:
 
                 term_q = f'"{t_var}"' if (" " in t_var and not t_var.startswith('"')) else t_var
 
+                # Step 3a: Query base company employee pool to capture all indexed staff
+                base_dork = f"site:linkedin.com/in {term_q} {loc_suffix}".strip()
+                base_results = self.search_engine.query(base_dork, max_results=self.max_leads_per_role)
+                if base_results:
+                    raw_search_items.extend(base_results)
+
                 if RoleCategory.C_SUITE in target_roles:
                     for role_kw in ["CEO", "Founder", "Director"]:
                         dork = f"site:linkedin.com/in {term_q} {role_kw}"

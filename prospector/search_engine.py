@@ -23,39 +23,70 @@ logger = logging.getLogger(__name__)
 
 
 class SearchEngine:
-    """Dispatches search queries to DuckDuckGo (free, zero-config) or optional Serper/Google APIs."""
+    """Dispatches search queries to DuckDuckGo/Yahoo (free, zero-config) or optional Serper/Google APIs."""
 
     def __init__(self, serper_api_key: Optional[str] = None):
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
+        self._ddgs_client = None
+        self._init_ddgs_client()
+
+    def _init_ddgs_client(self) -> None:
+        """Initialize or reset persistent DDGS client with higher timeout for cloud networks."""
         try:
-            if ddgs_core and hasattr(ddgs_core, "ENGINES"):
-                for eng in list(ddgs_core.ENGINES.get("text", {}).keys()):
-                    if eng != "yahoo":
-                        ddgs_core.ENGINES["text"].pop(eng, None)
-        except Exception:
-            pass
+            if DDGS:
+                self._ddgs_client = DDGS(timeout=15)
+        except Exception as e:
+            logger.debug(f"Could not initialize persistent DDGS client: {e}")
+            self._ddgs_client = None
 
     def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
-        """Search using DuckDuckGo via DDGS text search with automatic backoff retry."""
+        """Search using DuckDuckGo/Yahoo via DDGS with automatic backoff retry and backend fallback."""
         results: List[Dict[str, Any]] = []
+
+        # Polite inter-query pacing to avoid cloud runner edge socket terminations
+        time.sleep(0.4)
+
         for attempt in range(retries + 1):
             try:
-                with DDGS() as ddgs:
-                    raw_results = ddgs.text(query, max_results=max_results)
-                    for item in raw_results:
-                        results.append({
-                            "title": item.get("title", ""),
-                            "link": item.get("href", ""),
-                            "snippet": item.get("body", ""),
-                        })
+                # Ensure client is ready
+                if self._ddgs_client is None:
+                    self._init_ddgs_client()
+
+                client = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
+                if not client:
+                    break
+
+                # Attempt 1: Try Yahoo backend (high fidelity for site:linkedin.com/in)
+                raw_results = []
+                try:
+                    raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
+                except Exception as y_err:
+                    if "no results found" not in str(y_err).lower():
+                        logger.debug(f"Yahoo backend attempt error: {y_err}")
+                    # Fallback: Try default auto backend
+                    try:
+                        raw_results = list(client.text(query, backend="auto", max_results=max_results))
+                    except Exception as a_err:
+                        if "no results found" in str(a_err).lower():
+                            break
+                        raise a_err
+
+                for item in raw_results:
+                    results.append({
+                        "title": item.get("title", ""),
+                        "link": item.get("href", ""),
+                        "snippet": item.get("body", ""),
+                    })
                 break
             except Exception as exc:
                 if "no results found" in str(exc).lower():
                     # 0 search matches is normal, do not retry
                     break
                 logger.warning(f"DuckDuckGo search attempt {attempt+1} error: {exc}")
+                # Reset client on connection reset / TLS handshake errors
+                self._init_ddgs_client()
                 if attempt < retries:
                     time.sleep(1.2 * (attempt + 1))
         return results
