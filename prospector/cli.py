@@ -258,9 +258,10 @@ def main() -> None:
     pipeline = ProspectorPipeline(check_smtp=not args.no_smtp, max_leads_per_role=args.max_leads)
     result = pipeline.run(args.company, target_roles=roles, location=args.location)
 
-    if args.format == "table":
-        render_results_table(result)
-    elif args.format == "csv":
+    # Always render results table in console for immediate terminal visibility
+    render_results_table(result)
+
+    if args.format == "csv":
         out_path = args.output or f"{result.company.clean_name.lower()}_leads.csv"
         export_csv([result], out_path)
     elif args.format == "json":
