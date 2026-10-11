@@ -5,6 +5,8 @@ import csv
 import json
 import os
 import sys
+import re
+import time
 import logging
 from typing import List
 from rich.console import Console
@@ -256,26 +258,47 @@ def main() -> None:
     else:
         roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT, RoleCategory.TECH_LEAD, RoleCategory.PRODUCT]
 
+    # Parse company target(s) - supports comma, semicolon, or newline delimited domains
+    raw_targets = [t.strip() for t in re.split(r"[,;\n\r]+", args.company) if t.strip()]
+    if not raw_targets:
+        console.print("[red]No valid target companies or domains provided.[/red]")
+        return
+
     pipeline = ProspectorPipeline(check_smtp=not args.no_smtp, max_leads_per_role=args.max_leads)
-    result = pipeline.run(args.company, target_roles=roles, location=args.location)
+    all_results: List[ProspectorResult] = []
 
-    # Always render results table in console for immediate terminal visibility
-    render_results_table(result)
+    for idx, target in enumerate(raw_targets):
+        if idx > 0:
+            import time
+            time.sleep(1.5)  # Polite pacing between multiple domains
 
+        try:
+            result = pipeline.run(target, target_roles=roles, location=args.location)
+            all_results.append(result)
+            render_results_table(result)
+        except Exception as e:
+            logging.error(f"Error processing target '{target}': {e}")
+            console.print(f"[bold red][!] Error processing {target}:[/bold red] {e}")
+
+    if not all_results:
+        return
+
+    primary_name = all_results[0].company.clean_name.lower().replace(" ", "_") if all_results else "prospects"
     if args.format == "csv":
-        out_path = args.output or f"{result.company.clean_name.lower()}_leads.csv"
-        export_csv([result], out_path)
+        out_path = args.output or (f"batch_leads.csv" if len(all_results) > 1 else f"{primary_name}_leads.csv")
+        export_csv(all_results, out_path)
     elif args.format == "json":
-        out_path = args.output or f"{result.company.clean_name.lower()}_leads.json"
-        export_json([result], out_path)
+        out_path = args.output or (f"batch_leads.json" if len(all_results) > 1 else f"{primary_name}_leads.json")
+        export_json(all_results, out_path)
 
     # Write GitHub Flavored Markdown summary if requested or running in GitHub Actions
     summary_target = args.summary_file or os.getenv("GITHUB_STEP_SUMMARY")
     if summary_target:
         try:
-            summary_content = generate_markdown_summary(result)
             with open(summary_target, "a", encoding="utf-8") as f:
-                f.write(summary_content + "\n")
+                for res in all_results:
+                    summary_content = generate_markdown_summary(res)
+                    f.write(summary_content + "\n\n")
             console.print(f"[bold green][+] Appended Markdown summary to:[/bold green] {summary_target}")
         except Exception as e:
             logging.warning(f"Failed writing markdown summary to {summary_target}: {e}")

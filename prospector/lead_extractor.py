@@ -314,7 +314,9 @@ class LeadExtractor:
         non_entity_words = {
             "business", "personal", "portfolio", "growth", "speaker", "author", "coach",
             "mentor", "advisor", "enthusiast", "leader", "passionate", "helping", "building",
-            "driving", "experienced", "professional", "strategy", "innovation", "management"
+            "driving", "experienced", "professional", "strategy", "innovation", "management",
+            "education", "experience", "about", "skills", "activities", "contact", "info",
+            "view", "profile", "projects", "certifications", "licenses", "honors", "awards", "volunteer"
         }
 
         location_words = {

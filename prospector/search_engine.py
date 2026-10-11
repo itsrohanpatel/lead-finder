@@ -30,6 +30,7 @@ class SearchEngine:
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
         self._ddgs_client = None
+        self._cache: Dict[str, List[Dict[str, Any]]] = {}
         self._init_ddgs_client()
 
     def _init_ddgs_client(self) -> None:
@@ -43,10 +44,13 @@ class SearchEngine:
 
     def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
         """Search using Yahoo via DDGS with clean error handling and no toxic backend fallback."""
+        if query in self._cache:
+            return self._cache[query]
+
         results: List[Dict[str, Any]] = []
 
         # Polite inter-query pacing to avoid cloud runner edge socket terminations
-        time.sleep(0.4)
+        time.sleep(0.7)
 
         for attempt in range(retries + 1):
             try:
@@ -63,17 +67,17 @@ class SearchEngine:
                 try:
                     raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
                 except Exception as y_err:
-                    err_msg = str(y_err).lower()
-                    if "no results found" in err_msg:
-                        # Legitimate 0 matches for this specific query - exit cleanly
-                        return []
-                    # Network / connection reset / timeout: reset client and retry with backoff
-                    logger.debug(f"Yahoo search network error (attempt {attempt+1}): {y_err}")
+                    logger.debug(f"Yahoo search error: {y_err}, falling back to html")
                     self._init_ddgs_client()
-                    if attempt < retries:
-                        time.sleep(1.0 * (attempt + 1))
-                        continue
-                    return []
+
+                # Robust fallback to DuckDuckGo HTML engine if Yahoo returned 0 results
+                if not raw_results:
+                    try:
+                        client_fb = self._ddgs_client or (DDGS(timeout=15) if DDGS else None)
+                        if client_fb:
+                            raw_results = list(client_fb.text(query, backend="html", max_results=max_results))
+                    except Exception as fb_err:
+                        logger.debug(f"HTML fallback error: {fb_err}")
 
                 for item in raw_results:
                     results.append({
@@ -83,12 +87,12 @@ class SearchEngine:
                     })
                 break
             except Exception as exc:
-                if "no results found" in str(exc).lower():
-                    return []
                 logger.warning(f"Search attempt {attempt+1} error: {exc}")
                 self._init_ddgs_client()
                 if attempt < retries:
                     time.sleep(1.0 * (attempt + 1))
+        if results:
+            self._cache[query] = results
         return results
 
     def search_serper(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:

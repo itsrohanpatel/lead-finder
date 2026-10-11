@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       company:
-        description: 'Target company domain (e.g. stripe.com), name, or LinkedIn URL'
+        description: 'Target company domain(s) (e.g. stripe.com or rkhrm.com, upman.in), name, or LinkedIn URL'
         required: true
         type: string
-        default: 'stripe.com'
+        default: 'rkhrm.com'
       roles:
         description: 'Target roles'
         required: true
