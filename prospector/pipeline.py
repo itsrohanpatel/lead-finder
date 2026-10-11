@@ -106,6 +106,12 @@ class ProspectorPipeline:
             match_slug = re.search(r"linkedin\.com/company/([a-zA-Z0-9_\-]+)", company_info.linkedin_company_url)
             if match_slug:
                 raw_slug = match_slug.group(1).lower()
+                clean_slug = raw_slug.replace("-", " ").replace("_", " ").strip()
+                slug_words = [w for w in clean_slug.split() if w.lower() not in {"pvt", "ltd", "inc", "llc", "corp", "company", "official"}]
+                if slug_words:
+                    slug_title = " ".join(slug_words).title()
+                    if slug_title.lower() not in [s.lower() for s in search_terms]:
+                        search_terms.append(slug_title)
                 if raw_slug not in [s.lower().replace(" ", "") for s in search_terms]:
                     search_terms.append(raw_slug)
 

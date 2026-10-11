@@ -107,7 +107,9 @@ class CompanyResolver:
             "staffing", "recruitment", "home", "about us", "welcome", "official website",
             "design studio", "creative agency", "tech lab", "technologies",
             "india", "usa", "united states", "uk", "united kingdom", "australia", "canada",
-            "singapore", "uae", "dubai", "global", "contact", "privacy policy"
+            "singapore", "uae", "dubai", "global", "contact", "privacy policy",
+            "one moment", "just a moment", "attention required", "cloudflare", "security check",
+            "robot check", "access denied", "ddos-guard", "checking your browser", "please enable"
         ]
 
         try:

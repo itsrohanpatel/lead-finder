@@ -111,5 +111,15 @@ Whenever executing lead discovery for a company or domain:
   - Cloud runners (GitHub Actions / Azure / AWS) block outbound TCP port 25 by default to combat spam abuse.
   - Workflows must default to `--no-smtp`, relying on DNS MX fingerprinting (port 53/443) and B2B naming priors (`first.last` 50%, `flast` 20%) to preserve high deliverability confidence without connection timeouts.
 
+---
 
+## 10. Zero Hardcoded Targets & Dynamic Resolution Invariant
 
+* **Absolute Prohibition of Target Hardcoding**:
+  - Never write domain-specific or company-specific conditions (e.g., `if domain_sld == "upman"`, `if "technova" in domain`, or hardcoded company names) in production modules ([`pipeline.py`](file:///d:/Codinf%20projets/Prospector-ai/prospector/pipeline.py), [`company_resolver.py`](file:///d:/Codinf%20projets/Prospector-ai/prospector/company_resolver.py), [`lead_extractor.py`](file:///d:/Codinf%20projets/Prospector-ai/prospector/lead_extractor.py)).
+  - All company name variants, acronym expansions, brand aliases, and search terms must be dynamically derived from organic signals.
+
+* **Dynamic Organic Signals**:
+  1. **LinkedIn Company Slug Derivation**: Dynamically parse the verified LinkedIn company URL slug (e.g., `company/upman-placements-pvt-ltd`), convert hyphenated slugs to title-cased names, strip corporate entity suffixes (`pvt`, `ltd`, `inc`, `llc`), and feed the extracted brand name into search terms.
+  2. **Domain SLD & Tokenization**: Extract domain Second-Level Domain tokens organically without hardcoded assumptions.
+  3. **Universal Linguistic & Suffix Rules**: Apply generic linguistic rules (e.g. trailing `HRM` -> `HR`, `AI` acronyms, or corporate legal entity suffix stripping) rather than company-specific mappings.
