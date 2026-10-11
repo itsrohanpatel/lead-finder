@@ -165,7 +165,7 @@ class ProspectorPipeline:
                 else:
                     loc_suffix = loc_clean
 
-            term_q = f'"{t_clean}"' if (" " in t_clean and not t_clean.startswith('"')) else t_clean
+            term_q = t_clean
 
             # Step 3a: Query base company employee pool to capture all indexed staff
             base_dork = f"site:linkedin.com/in {term_q} {loc_suffix}".strip()
