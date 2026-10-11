@@ -1,14 +1,23 @@
-"""Search engine query provider for passive LinkedIn OSINT dorking."""
-
 import os
 import time
 import logging
+import warnings
 from typing import List, Dict, Any, Optional
 import requests
+
+# Suppress rename warning if legacy duckduckgo_search wrapper is imported
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*duckduckgo_search.*")
+
 try:
     from ddgs import DDGS
+    import ddgs.ddgs as ddgs_core
 except ImportError:
-    from duckduckgo_search import DDGS
+    try:
+        from duckduckgo_search import DDGS
+        import duckduckgo_search as ddgs_core
+    except ImportError:
+        DDGS = None
+        ddgs_core = None
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +30,10 @@ class SearchEngine:
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
         try:
-            from ddgs import ddgs
-            for eng in list(ddgs.ENGINES.get("text", {}).keys()):
-                if eng != "yahoo":
-                    ddgs.ENGINES["text"].pop(eng, None)
+            if ddgs_core and hasattr(ddgs_core, "ENGINES"):
+                for eng in list(ddgs_core.ENGINES.get("text", {}).keys()):
+                    if eng != "yahoo":
+                        ddgs_core.ENGINES["text"].pop(eng, None)
         except Exception:
             pass
 

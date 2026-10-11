@@ -1,5 +1,5 @@
 dnspython>=2.6.0
-duckduckgo_search>=7.0.0
+ddgs>=9.0.0
 pydantic>=2.7.0
 fastapi>=0.111.0
 uvicorn>=0.30.0
