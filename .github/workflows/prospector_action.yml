@@ -31,11 +31,6 @@ on:
         required: false
         type: boolean
         default: true
-      concurrency:
-        description: 'Parallel worker threads for multi-domain batches'
-        required: false
-        type: string
-        default: '3'
 
 jobs:
   prospect:
@@ -72,7 +67,6 @@ jobs:
             --format "${{ inputs.output_format }}" \
             --output "prospects.${{ inputs.output_format }}" \
             --summary-file "$GITHUB_STEP_SUMMARY" \
-            --concurrency "${{ inputs.concurrency || '3' }}" \
             --verbose \
             $EXTRA_ARGS
 
