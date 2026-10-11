@@ -80,12 +80,15 @@ Whenever executing lead discovery for a company or domain:
 
 ---
 
-## 8. Search Engine Dorking Fidelity & Operator Invariants
+## 8. Search Engine Dorking Fidelity & Multi-Backend Invariants
 
-* **Bing Search Dork Degradation**:
-  - Never route passive LinkedIn OSINT dorks (`site:linkedin.com/in`) through Bing's public web endpoint without browser JS rendering, as Bing drops `site:` filters under headless requests and returns unrelated top-level domains.
-* **Yahoo Backend Primacy**:
-  - Maintain the Yahoo search backend (`ddgs.ENGINES['text'] = {'yahoo': ...}`) as the primary zero-config engine for passive LinkedIn indexing due to its strict adherence to `site:` scoping and rich snippet metadata.
+* **Multi-Backend Fallback Order**:
+  - Always execute search via a three-tier resilience chain:
+    1. **Primary: Bing via DDGS (`backend="bing"`)** - Fast, headless-compatible, strictly adheres to `site:linkedin.com/in` scoping, and has zero cloud runner IP throttling.
+    2. **Secondary: Yahoo via DDGS (`backend="yahoo"`)** - High snippet fidelity for regional SERPs when Bing returns empty.
+    3. **Tertiary: Direct DuckDuckGo HTML Provider (`prospector/ddg_html_provider.py`)** - Direct zero-dependency form POST scraper fallback ensuring queries never fail if DDGS upstream changes or throttles.
+* **Retry Loop Integrity & Exponential Backoff**:
+  - Never issue a premature `break` on an empty search result. Always back off with `time.sleep(1.5 * (attempt + 1))` and reinitialize the persistent client across retries.
 
 ---
 
