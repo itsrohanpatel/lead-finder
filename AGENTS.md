@@ -87,4 +87,29 @@ Whenever executing lead discovery for a company or domain:
 * **Yahoo Backend Primacy**:
   - Maintain the Yahoo search backend (`ddgs.ENGINES['text'] = {'yahoo': ...}`) as the primary zero-config engine for passive LinkedIn indexing due to its strict adherence to `site:` scoping and rich snippet metadata.
 
+---
+
+## 9. Serverless & Cloud Runner Execution Invariants
+
+* **Search Engine Timeout & Client Persistence**:
+  - The default `DDGS()` timeout (5s) frequently drops responses under cloud datacenter networks (Azure / GitHub Actions runner latency spikes during TLS handshake).
+  - Always initialize search clients with `timeout=15` and reuse a persistent client instance across queries rather than instantiating per-request.
+
+* **Inter-Query Edge Socket Pacing**:
+  - Free search backends (Yahoo / DuckDuckGo) terminate connections (`peer closed connection without TLS close_notify`) when hammered in rapid succession from datacenter IP ranges.
+  - Enforce polite inter-query pacing (minimum `0.4s` sleep) between queries to ensure edge proxies keep connections alive.
+
+* **Base Dork Precedence for Small Entities**:
+  - Boutique agencies, startups, and SMEs frequently have employees with non-standard or compound titles (e.g. *Name - Company*, *HR Intern*, *Consultant*) that strict role dorks (`"Company" CEO`) miss completely.
+  - Always execute **Step 3a Base Dork** (`site:linkedin.com/in {term} {location}`) prior to role-specific keyword searches to ingest all indexed staff.
+
+* **Dual Console & Step Summary Visibility**:
+  - Serverless CI pipelines must never suppress terminal visualization when exporting to files (`--format csv`). Always render the formatted results table to stdout.
+  - Automatically detect and populate `$GITHUB_STEP_SUMMARY` with GitHub Flavored Markdown tables and lead counts so users can review leads directly in the Actions UI without downloading artifact zips.
+
+* **Outbound SMTP Socket Policy**:
+  - Cloud runners (GitHub Actions / Azure / AWS) block outbound TCP port 25 by default to combat spam abuse.
+  - Workflows must default to `--no-smtp`, relying on DNS MX fingerprinting (port 53/443) and B2B naming priors (`first.last` 50%, `flast` 20%) to preserve high deliverability confidence without connection timeouts.
+
+
 
