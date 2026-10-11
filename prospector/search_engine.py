@@ -42,7 +42,7 @@ class SearchEngine:
             self._ddgs_client = None
 
     def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
-        """Search using DuckDuckGo/Yahoo via DDGS with automatic backoff retry and backend fallback."""
+        """Search using Yahoo via DDGS with clean error handling and no toxic backend fallback."""
         results: List[Dict[str, Any]] = []
 
         # Polite inter-query pacing to avoid cloud runner edge socket terminations
@@ -58,20 +58,22 @@ class SearchEngine:
                 if not client:
                     break
 
-                # Attempt 1: Try Yahoo backend (high fidelity for site:linkedin.com/in)
+                # Query Yahoo backend (high fidelity for site:linkedin.com/in)
                 raw_results = []
                 try:
                     raw_results = list(client.text(query, backend="yahoo", max_results=max_results))
                 except Exception as y_err:
-                    if "no results found" not in str(y_err).lower():
-                        logger.debug(f"Yahoo backend attempt error: {y_err}")
-                    # Fallback: Try default auto backend
-                    try:
-                        raw_results = list(client.text(query, backend="auto", max_results=max_results))
-                    except Exception as a_err:
-                        if "no results found" in str(a_err).lower():
-                            break
-                        raise a_err
+                    err_msg = str(y_err).lower()
+                    if "no results found" in err_msg:
+                        # Legitimate 0 matches for this specific query - exit cleanly
+                        return []
+                    # Network / connection reset / timeout: reset client and retry with backoff
+                    logger.debug(f"Yahoo search network error (attempt {attempt+1}): {y_err}")
+                    self._init_ddgs_client()
+                    if attempt < retries:
+                        time.sleep(1.0 * (attempt + 1))
+                        continue
+                    return []
 
                 for item in raw_results:
                     results.append({
@@ -82,13 +84,11 @@ class SearchEngine:
                 break
             except Exception as exc:
                 if "no results found" in str(exc).lower():
-                    # 0 search matches is normal, do not retry
-                    break
-                logger.warning(f"DuckDuckGo search attempt {attempt+1} error: {exc}")
-                # Reset client on connection reset / TLS handshake errors
+                    return []
+                logger.warning(f"Search attempt {attempt+1} error: {exc}")
                 self._init_ddgs_client()
                 if attempt < retries:
-                    time.sleep(1.2 * (attempt + 1))
+                    time.sleep(1.0 * (attempt + 1))
         return results
 
     def search_serper(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:

@@ -112,6 +112,16 @@ class ProspectorPipeline:
                     slug_title = " ".join(slug_words).title()
                     if slug_title.lower() not in [s.lower() for s in search_terms]:
                         search_terms.append(slug_title)
+
+                # Universal compound unhyphenated slug separation (e.g. upmanplacements -> Upman Placements)
+                if domain_sld and raw_slug.startswith(domain_sld) and len(raw_slug) > len(domain_sld):
+                    remainder = raw_slug[len(domain_sld):].strip()
+                    remainder_words = [w for w in remainder.split() if w.lower() not in {"pvt", "ltd", "inc", "llc", "corp", "company", "official"}]
+                    if remainder_words:
+                        compound_title = f"{domain_sld} {' '.join(remainder_words)}".title()
+                        if compound_title.lower() not in [s.lower() for s in search_terms]:
+                            search_terms.append(compound_title)
+
                 if raw_slug not in [s.lower().replace(" ", "") for s in search_terms]:
                     search_terms.append(raw_slug)
 
@@ -127,70 +137,77 @@ class ProspectorPipeline:
             base = name[:-2].strip()
             search_terms.append(f"{base.title()} AI")
 
-        # Execute queries per target role and term (up to 3 unique terms)
+        # Deduplicate search terms case-insensitively and prioritize high-signal descriptive terms
+        unique_terms = []
+        seen_lower = set()
+        for t in search_terms:
+            t_clean = t.strip()
+            if t_clean.lower() not in seen_lower:
+                seen_lower.add(t_clean.lower())
+                unique_terms.append(t_clean)
+
+        # Prioritize multi-word descriptive trade names over single-word acronyms
+        unique_terms.sort(key=lambda s: len(s.split()), reverse=True)
+
+        # Execute queries per target role and term (up to 3 unique terms, case-normalized)
         seen_query_terms = set()
-        for term in search_terms[:3]:
-            term_variants = [term]
-            if term.lower() != term:
-                term_variants.append(term.lower())
+        for term in unique_terms[:3]:
+            t_clean = term.strip()
+            if t_clean.lower() in seen_query_terms:
+                continue
+            seen_query_terms.add(t_clean.lower())
 
-            for t_var in term_variants:
-                t_clean = t_var.strip()
-                if t_clean in seen_query_terms:
-                    continue
-                seen_query_terms.add(t_clean)
+            loc_suffix = ""
+            if location:
+                loc_clean = location.strip()
+                if loc_clean.lower() in ["pan india", "pan-india", "all india"]:
+                    loc_suffix = "India"
+                else:
+                    loc_suffix = loc_clean
 
-                loc_suffix = ""
-                if location:
-                    loc_clean = location.strip()
-                    if loc_clean.lower() in ["pan india", "pan-india", "all india"]:
-                        loc_suffix = "India"
-                    else:
-                        loc_suffix = loc_clean
+            term_q = f'"{t_clean}"' if (" " in t_clean and not t_clean.startswith('"')) else t_clean
 
-                term_q = f'"{t_var}"' if (" " in t_var and not t_var.startswith('"')) else t_var
+            # Step 3a: Query base company employee pool to capture all indexed staff
+            base_dork = f"site:linkedin.com/in {term_q} {loc_suffix}".strip()
+            base_results = self.search_engine.query(base_dork, max_results=self.max_leads_per_role)
+            if base_results:
+                raw_search_items.extend(base_results)
 
-                # Step 3a: Query base company employee pool to capture all indexed staff
-                base_dork = f"site:linkedin.com/in {term_q} {loc_suffix}".strip()
-                base_results = self.search_engine.query(base_dork, max_results=self.max_leads_per_role)
-                if base_results:
-                    raw_search_items.extend(base_results)
+            if RoleCategory.C_SUITE in target_roles:
+                for role_kw in ["CEO", "Founder", "Director"]:
+                    dork = f"site:linkedin.com/in {term_q} {role_kw}"
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
+                    if loc_suffix:
+                        dork_loc = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
+                        results_loc = self.search_engine.query(dork_loc, max_results=self.max_leads_per_role)
+                        if results_loc:
+                            raw_search_items.extend(results_loc)
 
-                if RoleCategory.C_SUITE in target_roles:
-                    for role_kw in ["CEO", "Founder", "Director"]:
-                        dork = f"site:linkedin.com/in {term_q} {role_kw}"
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
-                        if loc_suffix:
-                            dork_loc = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
-                            results_loc = self.search_engine.query(dork_loc, max_results=self.max_leads_per_role)
-                            if results_loc:
-                                raw_search_items.extend(results_loc)
+            if RoleCategory.HR_TALENT in target_roles:
+                hr_kws = ["HR", "Talent", "People", "Hiring"]
+                for role_kw in hr_kws:
+                    dork = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
 
-                if RoleCategory.HR_TALENT in target_roles:
-                    hr_kws = ["HR", "Talent", "People", "Hiring"]
-                    for role_kw in hr_kws:
-                        dork = f"site:linkedin.com/in {term_q} {role_kw} {loc_suffix}".strip()
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
+            if RoleCategory.TECH_LEAD in target_roles:
+                tech_kws = ["Tech Lead", "Founding Engineer", "Head of Engineering", "Engineering Lead", "Software Engineer"]
+                for role_kw in tech_kws:
+                    dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
 
-                if RoleCategory.TECH_LEAD in target_roles:
-                    tech_kws = ["Tech Lead", "Founding Engineer", "Head of Engineering", "Engineering Lead", "Software Engineer"]
-                    for role_kw in tech_kws:
-                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
-
-                if RoleCategory.PRODUCT in target_roles:
-                    prod_kws = ["Head of Product", "Product Manager", "Product Lead"]
-                    for role_kw in prod_kws:
-                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
+            if RoleCategory.PRODUCT in target_roles:
+                prod_kws = ["Head of Product", "Product Manager", "Product Lead"]
+                for role_kw in prod_kws:
+                    dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
+                    results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
+                    if results:
+                        raw_search_items.extend(results)
 
         # Step 4: Extract Leads from Search Results
         search_leads = LeadExtractor.extract_leads(
