@@ -35,12 +35,7 @@ def render_results_table(result: ProspectorResult) -> None:
 
     header_text = Text()
     header_text.append(f"Company: {company_name} | Domain: {domain} | Mail Provider: {provider}\n", style="bold cyan")
-    counts_str = f"Found {result.total_leads} Prospects ({result.c_suite_count} C-Suite, {result.hr_count} HR/Talent"
-    if result.tech_count > 0:
-        counts_str += f", {result.tech_count} Tech"
-    if result.product_count > 0:
-        counts_str += f", {result.product_count} Product"
-    counts_str += f") in {result.execution_time_sec}s"
+    counts_str = f"Found {result.total_leads} Prospects ({result.c_suite_count} C-Suite, {result.hr_count} HR/Talent) in {result.execution_time_sec}s"
     header_text.append(counts_str, style="green")
 
     console.print(Panel(header_text, title="Prospector-AI Lead Discovery", border_style="blue"))
@@ -197,7 +192,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--roles",
-        choices=["all", "c-suite", "hr", "tech", "product"],
+        choices=["all", "c-suite", "hr"],
         default="all",
         help="Filter target personas (default: all)",
     )
@@ -251,12 +246,8 @@ def main() -> None:
         roles = [RoleCategory.C_SUITE]
     elif args.roles == "hr":
         roles = [RoleCategory.HR_TALENT]
-    elif args.roles == "tech":
-        roles = [RoleCategory.TECH_LEAD]
-    elif args.roles == "product":
-        roles = [RoleCategory.PRODUCT]
     else:
-        roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT, RoleCategory.TECH_LEAD, RoleCategory.PRODUCT]
+        roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]
 
     # Parse company target(s) - supports comma, semicolon, or newline delimited domains
     raw_targets = [t.strip() for t in re.split(r"[,;\n\r]+", args.company) if t.strip()]

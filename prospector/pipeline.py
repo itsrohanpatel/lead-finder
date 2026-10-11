@@ -45,7 +45,7 @@ class ProspectorPipeline:
         logger.info(f"Starting prospecting for: {company_input}")
 
         if target_roles is None:
-            target_roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT, RoleCategory.TECH_LEAD, RoleCategory.PRODUCT]
+            target_roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]
 
         # Step 1: Resolve Company Info
         company_info = CompanyResolver.resolve(company_input, user_hint_name=company_name_hint)
@@ -207,22 +207,6 @@ class ProspectorPipeline:
                     if results:
                         raw_search_items.extend(results)
 
-            if idx == 0:
-                if RoleCategory.TECH_LEAD in target_roles:
-                    tech_kws = ["Tech Lead", "Founding Engineer", "Head of Engineering", "Engineering Lead", "Software Engineer"]
-                    for role_kw in tech_kws:
-                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
-
-                if RoleCategory.PRODUCT in target_roles:
-                    prod_kws = ["Head of Product", "Product Manager", "Product Lead"]
-                    for role_kw in prod_kws:
-                        dork = f"site:linkedin.com/in {term_q} \"{role_kw}\" {loc_suffix}".strip()
-                        results = self.search_engine.query(dork, max_results=self.max_leads_per_role)
-                        if results:
-                            raw_search_items.extend(results)
 
         # Step 4: Extract Leads from Search Results
         search_leads = LeadExtractor.extract_leads(

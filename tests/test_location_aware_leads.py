@@ -34,18 +34,16 @@ def test_extract_location_hint():
 
 
 def test_categorize_tech_and_product_roles():
-    """Verify Tech Lead and Product roles are accurately classified."""
-    assert LeadExtractor.categorize_role("Tech Lead & Founding Engineer") == RoleCategory.TECH_LEAD
-    assert LeadExtractor.categorize_role("Founding Engineer") == RoleCategory.TECH_LEAD
-    assert LeadExtractor.categorize_role("Head of Engineering") == RoleCategory.TECH_LEAD
-    assert LeadExtractor.categorize_role("Engineering Manager") == RoleCategory.TECH_LEAD
-    assert LeadExtractor.categorize_role("Staff Software Architect") == RoleCategory.TECH_LEAD
-    assert LeadExtractor.categorize_role("Lead Backend Engineer") == RoleCategory.TECH_LEAD
+    """Verify Tech Lead and Product roles fall into OTHER since only C-Suite and HR are targeted."""
+    assert LeadExtractor.categorize_role("Tech Lead") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Engineering Manager") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Staff Software Architect") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Lead Backend Engineer") == RoleCategory.OTHER
 
-    assert LeadExtractor.categorize_role("Product Manager") == RoleCategory.PRODUCT
-    assert LeadExtractor.categorize_role("Head of Product") == RoleCategory.PRODUCT
-    assert LeadExtractor.categorize_role("Lead Product Designer") == RoleCategory.PRODUCT
-    assert LeadExtractor.categorize_role("Product Analytics Lead") == RoleCategory.PRODUCT
+    assert LeadExtractor.categorize_role("Product Manager") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Head of Product") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Lead Product Designer") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Product Analytics Lead") == RoleCategory.OTHER
 
 
 def test_matches_target_location_aliases():
@@ -65,12 +63,12 @@ def test_extract_leads_with_location_filtering():
     raw_results = [
         {
             "link": "https://in.linkedin.com/in/jay-kumar",
-            "title": "Jay Kumar - Tech Lead & Founding Engineer @ Alaan | LinkedIn",
+            "title": "Jay Kumar - HR Specialist @ Alaan | LinkedIn",
             "snippet": "Experience: Alaan · Location: Bengaluru, Karnataka, India",
         },
         {
-            "link": "https://ae.linkedin.com/in/dubai-tech",
-            "title": "Omar Farooq - Tech Lead @ Alaan | LinkedIn",
+            "link": "https://ae.linkedin.com/in/dubai-hr",
+            "title": "Omar Farooq - HR Manager @ Alaan | LinkedIn",
             "snippet": "Experience: Alaan · Location: Dubai, UAE",
         },
         {
@@ -96,9 +94,9 @@ def test_extract_leads_with_location_filtering():
     names = [l.full_name for l in leads]
     # Parthi Duraisamy (Founder/CEO) is preserved as global founder
     assert "Parthi Duraisamy" in names
-    # Jay Kumar (Bengaluru tech lead) is included
+    # Jay Kumar (Bengaluru HR lead) is included
     assert "Jay Kumar" in names
     # Shristy Prasad (Bengaluru HR lead) is included
     assert "Shristy Prasad" in names
-    # Omar Farooq (Dubai tech lead) is excluded when location="India"
+    # Omar Farooq (Dubai HR lead) is excluded when location="India"
     assert "Omar Farooq" not in names

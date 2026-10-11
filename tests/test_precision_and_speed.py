@@ -86,7 +86,7 @@ def test_genuine_employees_with_same_surname_as_brand_pass():
         search_results=raw,
         company_name="Jaininfotech",
         domain="jaininfotech.in",
-        target_roles=[RoleCategory.C_SUITE, RoleCategory.TECH_LEAD, RoleCategory.OTHER]
+        target_roles=[RoleCategory.C_SUITE, RoleCategory.OTHER]
     )
     assert len(leads) == 2
     names = [l.full_name for l in leads]

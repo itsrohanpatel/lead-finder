@@ -223,7 +223,7 @@ class LeadExtractor:
 
     @classmethod
     def categorize_role(cls, title: str) -> RoleCategory:
-        """Categorize job title into C-Suite, HR/Talent, Tech Lead, Product, or Other."""
+        """Categorize job title into C-Suite, HR/Talent, or Other."""
         title_lower = title.lower()
         for kw in HR_TALENT_KEYWORDS:
             if re.search(kw, title_lower):
@@ -231,12 +231,6 @@ class LeadExtractor:
         for kw in C_SUITE_KEYWORDS:
             if re.search(kw, title_lower):
                 return RoleCategory.C_SUITE
-        for kw in TECH_LEAD_KEYWORDS:
-            if re.search(kw, title_lower):
-                return RoleCategory.TECH_LEAD
-        for kw in PRODUCT_KEYWORDS:
-            if re.search(kw, title_lower):
-                return RoleCategory.PRODUCT
         return RoleCategory.OTHER
 
     @classmethod
@@ -508,7 +502,7 @@ class LeadExtractor:
         seen_names = set()
 
         if target_roles is None:
-            target_roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT, RoleCategory.TECH_LEAD, RoleCategory.PRODUCT]
+            target_roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]
 
         brand_tokens = cls.get_brand_tokens(company_name, domain)
 
@@ -610,7 +604,7 @@ class LeadExtractor:
             # Location filtering for non-C-Suite regional leads:
             # If target location is specified, filter out non-matching regional leads.
             # (Founders / C-Suite are preserved because founders can be anywhere)
-            if location and role_cat in [RoleCategory.HR_TALENT, RoleCategory.TECH_LEAD, RoleCategory.PRODUCT]:
+            if location and role_cat == RoleCategory.HR_TALENT:
                 if not cls.matches_target_location(lead_loc, location):
                     continue
 
