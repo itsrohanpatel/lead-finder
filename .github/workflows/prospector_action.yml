@@ -53,18 +53,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Search Engine Connectivity Test
-        run: |
-          python -c "
-          from prospector.search_engine import SearchEngine
-          se = SearchEngine()
-          print('[*] Probing search engine response on cloud runner...')
-          res = se.query('site:linkedin.com/in thebigcjobs')
-          print(f'[+] Returned {len(res)} results:')
-          for r in res[:5]:
-              print('  -', r.get('title', '')[:80], '->', r.get('link', ''))
-          "
-
       - name: Run Prospector Pipeline
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
