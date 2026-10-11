@@ -121,9 +121,23 @@ class EmailVerifier:
                     status = "valid"
                     updated_confidence = 0.95
             elif code in {550, 551, 552, 553, 554}:
-                smtp_success = False
-                status = "undeliverable"
-                updated_confidence = 0.0
+                # Check if rejection is due to sender/IP policy (e.g. Spamhaus, residential IP block)
+                msg_lower = msg.lower()
+                is_policy_block = any(
+                    phrase in msg_lower
+                    for phrase in [
+                        "policy", "spamhaus", "dynamic ip", "blacklist", "blocklist",
+                        "rbl", "unauthenticated", "rejected for policy"
+                    ]
+                )
+                if is_policy_block:
+                    # Server refused us due to our IP reputation, not because the mailbox is invalid
+                    smtp_success = None
+                    status = "likely" if is_catch_all is not True else "catch_all"
+                else:
+                    smtp_success = False
+                    status = "undeliverable"
+                    updated_confidence = 0.0
             else:
                 # Port 25 timeout/blocked or server refused probe
                 smtp_success = None

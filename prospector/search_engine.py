@@ -18,6 +18,8 @@ class SearchEngine:
 
     def __init__(self, serper_api_key: Optional[str] = None):
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
+        # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
+        logging.getLogger("ddgs").setLevel(logging.ERROR)
         try:
             from ddgs import ddgs
             for eng in list(ddgs.ENGINES.get("text", {}).keys()):
@@ -26,7 +28,7 @@ class SearchEngine:
         except Exception:
             pass
 
-    def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 1) -> List[Dict[str, Any]]:
+    def search_duckduckgo(self, query: str, max_results: int = 15, retries: int = 3) -> List[Dict[str, Any]]:
         """Search using DuckDuckGo via DDGS text search with automatic backoff retry."""
         results: List[Dict[str, Any]] = []
         for attempt in range(retries + 1):
@@ -46,7 +48,7 @@ class SearchEngine:
                     break
                 logger.warning(f"DuckDuckGo search attempt {attempt+1} error: {exc}")
                 if attempt < retries:
-                    time.sleep(1.0)
+                    time.sleep(1.2 * (attempt + 1))
         return results
 
     def search_serper(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:

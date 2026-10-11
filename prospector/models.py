@@ -9,6 +9,8 @@ class RoleCategory(str, Enum):
     """Classification of target decision-maker roles."""
     C_SUITE = "c_suite"
     HR_TALENT = "hr_talent"
+    TECH_LEAD = "tech_lead"
+    PRODUCT = "product"
     OTHER = "other"
 
 
@@ -18,6 +20,7 @@ class CompanyInfo(BaseModel):
     clean_name: str
     domain: Optional[str] = None
     linkedin_company_url: Optional[str] = None
+    location_hint: Optional[str] = None
     direct_website_leads: List[dict] = Field(default_factory=list)
 
 
@@ -42,6 +45,7 @@ class LeadRecord(BaseModel):
     linkedin_url: Optional[str] = None
     company_name: str
     domain: Optional[str] = None
+    location: Optional[str] = None
     best_email: Optional[str] = None
     email_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     permutations: List[EmailPermutation] = Field(default_factory=list)
@@ -64,5 +68,7 @@ class ProspectorResult(BaseModel):
     leads: List[LeadRecord] = Field(default_factory=list)
     c_suite_count: int = 0
     hr_count: int = 0
+    tech_count: int = 0
+    product_count: int = 0
     total_leads: int = 0
     execution_time_sec: float = 0.0
