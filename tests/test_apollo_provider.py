@@ -74,3 +74,136 @@ def test_search_employees_success(mock_post):
     assert "human_resources" in payload["person_departments"]
     assert "head" in payload["person_seniorities"]
     assert called_kwargs["headers"]["X-Api-Key"] == "test_key_123"
+
+
+def test_resolve_departments():
+    deps = ApolloProvider.resolve_departments(["hr", "recruiting", "talent", "tech", "sales", "csuite", "unknown_dept"])
+    assert "human_resources" in deps
+    assert "engineering_technical" in deps
+    assert "sales" in deps
+    assert "c_suite" in deps
+    assert len(deps) == 4
+
+
+def test_resolve_seniorities():
+    sens = ApolloProvider.resolve_seniorities(["founder", "cofounder", "exec", "lead", "mgr", "senior"])
+    assert "founder" in sens
+    assert "c_suite" in sens
+    assert "head" in sens
+    assert "manager" in sens
+    assert "senior" in sens
+
+
+def test_match_obfuscated_last_name():
+    # Exact pattern matches
+    assert ApolloProvider.match_obfuscated_last_name("Verma", "Ve***a") is True
+    assert ApolloProvider.match_obfuscated_last_name("Gupta", "Gu***a") is True
+    assert ApolloProvider.match_obfuscated_last_name("Kumar", "Ku***r") is True
+    assert ApolloProvider.match_obfuscated_last_name("Raghavan", "Ra***n") is True
+    assert ApolloProvider.match_obfuscated_last_name("Shah", "S***h") is True
+    assert ApolloProvider.match_obfuscated_last_name("Balaraman", "Ba***n") is True
+
+    # Case insensitivity
+    assert ApolloProvider.match_obfuscated_last_name("verma", "Ve***a") is True
+    assert ApolloProvider.match_obfuscated_last_name("VERMA", "ve***a") is True
+
+    # Mismatches
+    assert ApolloProvider.match_obfuscated_last_name("Sharma", "Ve***a") is False
+    assert ApolloProvider.match_obfuscated_last_name("Gupta", "Ku***r") is False
+    assert ApolloProvider.match_obfuscated_last_name("Patel", "Ra***n") is False
+    assert ApolloProvider.match_obfuscated_last_name("", "Ve***a") is False
+    assert ApolloProvider.match_obfuscated_last_name("Verma", "") is False
+
+
+def test_extract_name_from_linkedin_title():
+    # Matches
+    res1 = ApolloProvider.extract_name_from_linkedin_title(
+        "Sshubam Verma - ML Engineer @ Sarvam | LinkedIn", "Sshubam", "Ve***a"
+    )
+    assert res1 == ("Sshubam Verma", "Verma")
+
+    res2 = ApolloProvider.extract_name_from_linkedin_title(
+        "Aarthi Balaraman - Hiring @ Sarvam; Ex-Abnormal AI, Google ...", "Aarthi", "Ba***n"
+    )
+    assert res2 == ("Aarthi Balaraman", "Balaraman")
+
+    res3 = ApolloProvider.extract_name_from_linkedin_title(
+        "Vivek Raghavan - Sarvam AI | LinkedIn", "Vivek", "Ra***n"
+    )
+    assert res3 == ("Vivek Raghavan", "Raghavan")
+
+    # Rejection of mismatched last name
+    res4 = ApolloProvider.extract_name_from_linkedin_title(
+        "Vivek Raghavan - Sarvam AI | LinkedIn", "Vivek", "Gu***a"
+    )
+    assert res4 is None
+
+
+def test_unmask_candidate_via_title():
+    provider = ApolloProvider(api_key="test_key")
+    mock_search_engine = MagicMock()
+    mock_search_engine.search_duckduckgo.return_value = [
+        {
+            "title": "Sshubam Verma - ML Engineer @ Sarvam | LinkedIn",
+            "link": "https://in.linkedin.com/in/sshubamverma",
+        }
+    ]
+
+    candidate = {
+        "first_name": "Sshubam",
+        "last_name": "Ve***a",
+        "last_name_obfuscated": "Ve***a",
+        "is_obfuscated": True,
+        "name": "Sshubam Ve***a",
+        "title": "ML Engineer",
+    }
+
+    unmasked = provider.unmask_candidate(candidate, mock_search_engine, "Sarvam AI")
+    assert unmasked["name"] == "Sshubam Verma"
+    assert unmasked["last_name"] == "Verma"
+    assert unmasked["is_obfuscated"] is False
+    assert unmasked["linkedin_url"] == "https://in.linkedin.com/in/sshubamverma"
+
+
+def test_unmask_candidate_via_slug():
+    provider = ApolloProvider(api_key="test_key")
+    mock_search_engine = MagicMock()
+    mock_search_engine.search_duckduckgo.return_value = [
+        {
+            "title": "Sshubam - ML Engineer",
+            "link": "https://in.linkedin.com/in/sshubamverma",
+        }
+    ]
+
+    candidate = {
+        "first_name": "Sshubam",
+        "last_name": "Ve***a",
+        "last_name_obfuscated": "Ve***a",
+        "is_obfuscated": True,
+        "name": "Sshubam Ve***a",
+        "title": "ML Engineer",
+    }
+
+    unmasked = provider.unmask_candidate(candidate, mock_search_engine, "Sarvam AI")
+    assert unmasked["name"] == "Sshubam Verma"
+    assert unmasked["last_name"] == "Verma"
+    assert unmasked["is_obfuscated"] is False
+    assert unmasked["linkedin_url"] == "https://in.linkedin.com/in/sshubamverma"
+
+
+def test_unmask_already_complete():
+    provider = ApolloProvider(api_key="test_key")
+    mock_search_engine = MagicMock()
+
+    candidate = {
+        "first_name": "Pratyush",
+        "last_name": "Kumar",
+        "is_obfuscated": False,
+        "name": "Pratyush Kumar",
+        "title": "Co-Founder",
+    }
+
+    unmasked = provider.unmask_candidate(candidate, mock_search_engine, "Sarvam AI")
+    assert unmasked["name"] == "Pratyush Kumar"
+    mock_search_engine.search_duckduckgo.assert_not_called()
+

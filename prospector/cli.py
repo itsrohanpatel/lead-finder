@@ -244,6 +244,18 @@ def main() -> None:
         help="Optional Apify API token for Google Search Scraper Actor fallback",
     )
     parser.add_argument(
+        "--apollo-key",
+        help="Optional Apollo.io API key for free direct B2B employee roster discovery",
+    )
+    parser.add_argument(
+        "--departments",
+        help="Optional comma-separated list of departments to target (e.g. c_suite,human_resources,engineering_technical,sales,marketing)",
+    )
+    parser.add_argument(
+        "--seniorities",
+        help="Optional comma-separated list of seniorities to target (e.g. founder,c_suite,owner,head,director,vp,manager)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -271,6 +283,9 @@ def main() -> None:
         console.print("[red]No valid target companies or domains provided.[/red]")
         return
 
+    departments = [d.strip() for d in args.departments.split(",") if d.strip()] if args.departments else None
+    seniorities = [s.strip() for s in args.seniorities.split(",") if s.strip()] if args.seniorities else None
+
     from prospector.search_engine import SearchEngine
     search_engine = SearchEngine(
         serper_api_key=args.serper_key,
@@ -282,6 +297,7 @@ def main() -> None:
         search_engine=search_engine,
         check_smtp=not args.no_smtp,
         max_leads_per_role=args.max_leads,
+        apollo_api_key=args.apollo_key,
     )
     all_results: List[ProspectorResult] = []
 
@@ -291,7 +307,13 @@ def main() -> None:
             time.sleep(1.5)  # Polite pacing between multiple domains
 
         try:
-            result = pipeline.run(target, target_roles=roles, location=args.location)
+            result = pipeline.run(
+                target,
+                target_roles=roles,
+                location=args.location,
+                departments=departments,
+                seniorities=seniorities,
+            )
             all_results.append(result)
             render_results_table(result)
         except Exception as e:
