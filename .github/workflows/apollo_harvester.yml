@@ -70,28 +70,26 @@ jobs:
           APOLLO_API_KEY_5: ${{ secrets.APOLLO_API_KEY_5 }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         run: |
-          EXTRA_ARGS=""
-          if [ "${{ inputs.no_smtp }}" = "true" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --no-smtp"
-          fi
-
-          # Resolve departments argument
-          if [ -n "${{ inputs.departments }}" ] && [ "${{ inputs.departments }}" != "all" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --departments '${{ inputs.departments }}'"
-          fi
-
-          # Resolve seniorities argument
-          if [ -n "${{ inputs.seniorities }}" ] && [ "${{ inputs.seniorities }}" != "all" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --seniorities '${{ inputs.seniorities }}'"
-          fi
-
-          python -m prospector.cli "${{ inputs.company }}" \
+          CMD=(python -m prospector.cli "${{ inputs.company }}" \
             --format "${{ inputs.output_format }}" \
             --output "prospects.${{ inputs.output_format }}" \
             --max-leads "${{ inputs.max_leads }}" \
             --summary-file "$GITHUB_STEP_SUMMARY" \
-            --verbose \
-            $EXTRA_ARGS
+            --verbose)
+
+          if [ "${{ inputs.no_smtp }}" = "true" ]; then
+            CMD+=(--no-smtp)
+          fi
+
+          if [ -n "${{ inputs.departments }}" ] && [ "${{ inputs.departments }}" != "all" ]; then
+            CMD+=(--departments "${{ inputs.departments }}")
+          fi
+
+          if [ -n "${{ inputs.seniorities }}" ] && [ "${{ inputs.seniorities }}" != "all" ]; then
+            CMD+=(--seniorities "${{ inputs.seniorities }}")
+          fi
+
+          "${CMD[@]}"
 
       - name: Upload Lead Artifact
         if: inputs.output_format != 'table'

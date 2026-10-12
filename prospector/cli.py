@@ -283,8 +283,8 @@ def main() -> None:
         console.print("[red]No valid target companies or domains provided.[/red]")
         return
 
-    departments = [d.strip() for d in args.departments.split(",") if d.strip()] if args.departments else None
-    seniorities = [s.strip() for s in args.seniorities.split(",") if s.strip()] if args.seniorities else None
+    departments = [d.strip().strip("'\"") for d in re.split(r"[,;]+", args.departments) if d.strip().strip("'\"")] if args.departments else None
+    seniorities = [s.strip().strip("'\"") for s in re.split(r"[,;]+", args.seniorities) if s.strip().strip("'\"")] if args.seniorities else None
 
     from prospector.search_engine import SearchEngine
     search_engine = SearchEngine(

@@ -67,22 +67,22 @@ jobs:
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         run: |
-          EXTRA_ARGS=""
-          if [ "${{ inputs.no_smtp }}" = "true" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --no-smtp"
-          fi
-          if [ -n "${{ inputs.location }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --location '${{ inputs.location }}'"
-          fi
-
-          python -m prospector.cli "${{ inputs.company }}" \
+          CMD=(python -m prospector.cli "${{ inputs.company }}" \
             --roles "${{ inputs.roles }}" \
             --format "${{ inputs.output_format }}" \
             --output "prospects.${{ inputs.output_format }}" \
             --max-leads "${{ inputs.max_leads }}" \
             --summary-file "$GITHUB_STEP_SUMMARY" \
-            --verbose \
-            $EXTRA_ARGS
+            --verbose)
+
+          if [ "${{ inputs.no_smtp }}" = "true" ]; then
+            CMD+=(--no-smtp)
+          fi
+          if [ -n "${{ inputs.location }}" ]; then
+            CMD+=(--location "${{ inputs.location }}")
+          fi
+
+          "${CMD[@]}"
 
       - name: Upload Lead Artifact
         if: inputs.output_format != 'table'
