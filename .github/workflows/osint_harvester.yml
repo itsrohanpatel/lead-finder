@@ -1,4 +1,4 @@
-name: Prospector-AI Serverless Lead Harvester
+name: Prospector-AI Zero-Config OSINT Harvester
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         type: string
         default: 'rkhrm.com'
       roles:
-        description: 'Target roles'
+        description: 'Target Decision-Maker Personas'
         required: true
         type: choice
         options:
@@ -17,6 +17,11 @@ on:
           - c-suite
           - hr
         default: 'all'
+      location:
+        description: 'Optional Geographic Location Filter (e.g. India, USA, London, Bengaluru)'
+        required: false
+        type: string
+        default: ''
       output_format:
         description: 'Output format'
         required: true
@@ -26,19 +31,19 @@ on:
           - json
           - table
         default: 'csv'
-      departments:
-        description: 'Optional Apollo departments (e.g. c_suite,hr,engineering,sales)'
+      max_leads:
+        description: 'Max leads per role'
         required: false
         type: string
-        default: ''
+        default: '10'
       no_smtp:
-        description: 'Disable raw SMTP port 25 check (Recommended on cloud runners)'
+        description: 'Disable raw TCP port 25 SMTP check (Recommended on cloud runners)'
         required: false
         type: boolean
         default: true
 
 jobs:
-  prospect:
+  osint_prospect:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -58,29 +63,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Prospector Pipeline
+      - name: Run Zero-Config OSINT Pipeline (No API Keys Required)
         env:
-          APOLLO_API_KEYS: ${{ secrets.APOLLO_API_KEYS }}
-          APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
-          APOLLO_API_KEY_1: ${{ secrets.APOLLO_API_KEY_1 }}
-          APOLLO_API_KEY_2: ${{ secrets.APOLLO_API_KEY_2 }}
-          APOLLO_API_KEY_3: ${{ secrets.APOLLO_API_KEY_3 }}
-          APOLLO_API_KEY_4: ${{ secrets.APOLLO_API_KEY_4 }}
-          APOLLO_API_KEY_5: ${{ secrets.APOLLO_API_KEY_5 }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         run: |
           EXTRA_ARGS=""
           if [ "${{ inputs.no_smtp }}" = "true" ]; then
             EXTRA_ARGS="$EXTRA_ARGS --no-smtp"
           fi
-          if [ -n "${{ inputs.departments }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --departments ${{ inputs.departments }}"
+          if [ -n "${{ inputs.location }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --location '${{ inputs.location }}'"
           fi
-          
+
           python -m prospector.cli "${{ inputs.company }}" \
             --roles "${{ inputs.roles }}" \
             --format "${{ inputs.output_format }}" \
             --output "prospects.${{ inputs.output_format }}" \
+            --max-leads "${{ inputs.max_leads }}" \
             --summary-file "$GITHUB_STEP_SUMMARY" \
             --verbose \
             $EXTRA_ARGS
@@ -89,10 +88,11 @@ jobs:
         if: inputs.output_format != 'table'
         uses: actions/upload-artifact@v4
         with:
-          name: lead-results
+          name: osint-lead-results
           path: prospects.${{ inputs.output_format }}
 
       - name: Display Summary Info
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 📦 **Download Artifact**: Discovered leads are packaged and downloadable from the Artifacts section above." >> $GITHUB_STEP_SUMMARY
+          echo "> 🌐 **Zero-Config OSINT Harvester**: Discovered via passive search engine indexes (100% Free, Zero API Keys, Unlimited Runs)." >> $GITHUB_STEP_SUMMARY
+          echo "> 📦 **Download Artifact**: CSV/JSON files are downloadable directly from the Actions artifact panel above." >> $GITHUB_STEP_SUMMARY
