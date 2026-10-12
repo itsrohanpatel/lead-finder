@@ -156,17 +156,20 @@ def main():
 
     args = parser.parse_args()
 
-    apollo_key = args.apollo_key or os.getenv("APOLLO_API_KEY")
-    if not apollo_key:
+    apollo_provider = ApolloProvider(api_key=args.apollo_key)
+    if not apollo_provider.api_keys:
         console.print(Panel(
-            "[bold red]Error: No Apollo API key provided![/bold red]\n\n"
-            "You can provide your key in any of these ways:\n"
-            "1. Create a [bold cyan].env[/bold cyan] file in this directory with:\n"
-            "   [green]APOLLO_API_KEY=your_key_here[/green]\n"
-            "2. Pass it via command line argument:\n"
-            "   [yellow]python scrape_apollo.py sarvam.ai --apollo-key your_key_here[/yellow]\n"
-            "3. Or set it in your system environment:\n"
-            "   [dim]set APOLLO_API_KEY=your_key_here[/dim]",
+            "[bold red]Error: No Apollo API key(s) provided![/bold red]\n\n"
+            "You can provide single or multiple keys (for automatic rotation):\n"
+            "1. In [bold cyan].env[/bold cyan] (supports comma-separated or multiple numbered keys):\n"
+            "   [green]APOLLO_API_KEYS=key1,key2,key3[/green]\n"
+            "   or\n"
+            "   [green]APOLLO_API_KEY_1=key1[/green]\n"
+            "   [green]APOLLO_API_KEY_2=key2[/green]\n"
+            "2. Pass via command line argument:\n"
+            "   [yellow]python scrape_apollo.py sarvam.ai --apollo-key key1,key2[/yellow]\n"
+            "3. In GitHub Repository Secrets:\n"
+            "   Add secret [bold cyan]APOLLO_API_KEYS[/bold cyan] or [bold cyan]APOLLO_API_KEY_1[/bold cyan], etc.",
             title="Apollo Authentication Required",
             border_style="red"
         ))
@@ -182,7 +185,6 @@ def main():
     deps = [d.strip() for d in args.departments.split(",") if d.strip()]
     sens = [s.strip() for s in args.seniorities.split(",") if s.strip()]
 
-    apollo_provider = ApolloProvider(api_key=apollo_key)
     pipeline = ProspectorPipeline(
         apollo_provider=apollo_provider,
         check_smtp=not args.no_smtp,
@@ -193,6 +195,7 @@ def main():
     start_total = time.time()
 
     console.print(f"[bold cyan]Starting Apollo Scraper for {len(targets)} target(s)...[/bold cyan]")
+    console.print(f"[bold green]Key Pool: Loaded {len(apollo_provider.api_keys)} Apollo API key(s) with automatic failover & rotation.[/bold green]")
     console.print(f"[dim]Departments: {deps} | Seniorities: {sens}[/dim]\n")
 
     for idx, domain in enumerate(targets, 1):

@@ -26,6 +26,11 @@ on:
           - json
           - table
         default: 'csv'
+      departments:
+        description: 'Optional Apollo departments (e.g. c_suite,hr,engineering,sales)'
+        required: false
+        type: string
+        default: ''
       no_smtp:
         description: 'Disable raw SMTP port 25 check (Recommended on cloud runners)'
         required: false
@@ -55,11 +60,21 @@ jobs:
 
       - name: Run Prospector Pipeline
         env:
+          APOLLO_API_KEYS: ${{ secrets.APOLLO_API_KEYS }}
+          APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+          APOLLO_API_KEY_1: ${{ secrets.APOLLO_API_KEY_1 }}
+          APOLLO_API_KEY_2: ${{ secrets.APOLLO_API_KEY_2 }}
+          APOLLO_API_KEY_3: ${{ secrets.APOLLO_API_KEY_3 }}
+          APOLLO_API_KEY_4: ${{ secrets.APOLLO_API_KEY_4 }}
+          APOLLO_API_KEY_5: ${{ secrets.APOLLO_API_KEY_5 }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         run: |
           EXTRA_ARGS=""
           if [ "${{ inputs.no_smtp }}" = "true" ]; then
-            EXTRA_ARGS="--no-smtp"
+            EXTRA_ARGS="$EXTRA_ARGS --no-smtp"
+          fi
+          if [ -n "${{ inputs.departments }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --departments ${{ inputs.departments }}"
           fi
           
           python -m prospector.cli "${{ inputs.company }}" \

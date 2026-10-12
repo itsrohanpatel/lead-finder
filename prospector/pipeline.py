@@ -37,10 +37,12 @@ class ProspectorPipeline:
 
         if apollo_provider:
             self.apollo_provider = apollo_provider
-        elif apollo_api_key or os.getenv("APOLLO_API_KEY"):
-            self.apollo_provider = ApolloProvider(api_key=apollo_api_key or os.getenv("APOLLO_API_KEY"))
         else:
-            self.apollo_provider = None
+            candidate_provider = ApolloProvider(api_key=apollo_api_key)
+            if candidate_provider.api_keys:
+                self.apollo_provider = candidate_provider
+            else:
+                self.apollo_provider = None
 
     def run(
         self,

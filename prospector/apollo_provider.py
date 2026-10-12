@@ -8,7 +8,8 @@ Includes intelligent search-engine unmasking of Apollo's obfuscated last names f
 import os
 import re
 import logging
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
+import time
 import requests
 
 logger = logging.getLogger(__name__)
@@ -79,8 +80,81 @@ class ApolloProvider:
         "sr": "senior",
     }
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("APOLLO_API_KEY", "")
+    def __init__(self, api_key: Optional[Union[str, List[str]]] = None):
+        self.api_keys: List[str] = self._resolve_api_keys(api_key)
+        self._current_index: int = 0
+
+    @classmethod
+    def _resolve_api_keys(cls, api_key_arg: Optional[Union[str, List[str]]] = None) -> List[str]:
+        """Collect and deduplicate Apollo API keys from arguments and environment variables.
+
+        Supports:
+        - List of keys: ["key1", "key2"]
+        - Comma/newline separated strings: "key1,key2,key3"
+        - APOLLO_API_KEYS env var (comma/newline separated)
+        - APOLLO_API_KEY env var
+        - APOLLO_API_KEY_1, APOLLO_API_KEY_2, APOLLO_API_KEY_3, etc.
+        """
+        raw_keys: List[str] = []
+
+        # 1. Check explicit argument
+        if api_key_arg:
+            if isinstance(api_key_arg, list):
+                raw_keys.extend(api_key_arg)
+            elif isinstance(api_key_arg, str):
+                for k in re.split(r"[,;\n\r]+", api_key_arg):
+                    if k.strip():
+                        raw_keys.append(k.strip())
+
+        # 2. Check APOLLO_API_KEYS environment variable
+        env_keys = os.getenv("APOLLO_API_KEYS", "")
+        if env_keys:
+            for k in re.split(r"[,;\n\r]+", env_keys):
+                if k.strip():
+                    raw_keys.append(k.strip())
+
+        # 3. Check APOLLO_API_KEY environment variable
+        single_env = os.getenv("APOLLO_API_KEY", "")
+        if single_env:
+            for k in re.split(r"[,;\n\r]+", single_env):
+                if k.strip():
+                    raw_keys.append(k.strip())
+
+        # 4. Check numbered environment variables: APOLLO_API_KEY_1, APOLLO_API_KEY_2, etc.
+        for env_name, env_val in os.environ.items():
+            if re.match(r"^APOLLO_API_KEY_\d+$", env_name, re.IGNORECASE) and env_val.strip():
+                raw_keys.append(env_val.strip())
+
+        # Deduplicate while preserving order
+        deduped: List[str] = []
+        seen = set()
+        for k in raw_keys:
+            k_clean = k.strip()
+            if k_clean and k_clean not in seen:
+                seen.add(k_clean)
+                deduped.append(k_clean)
+
+        return deduped
+
+    @property
+    def api_key(self) -> str:
+        """Returns the currently active API key, or empty string if no keys configured."""
+        if not self.api_keys:
+            return ""
+        return self.api_keys[self._current_index % len(self.api_keys)]
+
+    def rotate_key(self, reason: str = "rate_limit") -> Optional[str]:
+        """Rotate to the next API key in the pool (round-robin / failover)."""
+        if not self.api_keys or len(self.api_keys) <= 1:
+            return self.api_key if self.api_keys else None
+        old_idx = self._current_index % len(self.api_keys)
+        self._current_index = (self._current_index + 1) % len(self.api_keys)
+        new_idx = self._current_index % len(self.api_keys)
+        logger.info(
+            f"Rotating Apollo API key ({reason}): switched from key #{old_idx + 1} "
+            f"to key #{new_idx + 1} of {len(self.api_keys)}."
+        )
+        return self.api_key
 
     @classmethod
     def clean_domain(cls, website_or_domain: str) -> str:
@@ -205,12 +279,43 @@ class ApolloProvider:
             if valid_sens:
                 payload["person_seniorities"] = valid_sens
 
-            try:
-                resp = requests.post(self.BASE_URL, headers=headers, json=payload, timeout=12.0)
-                if resp.status_code != 200:
-                    logger.debug(f"Apollo API error: {resp.status_code} - {resp.text[:200]}")
+            attempts = 0
+            max_attempts = max(1, len(self.api_keys))
+            resp = None
+
+            while attempts < max_attempts:
+                current_key = self.api_key
+                headers = {
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-cache",
+                    "X-Api-Key": current_key,
+                }
+                try:
+                    resp = requests.post(self.BASE_URL, headers=headers, json=payload, timeout=12.0)
+                    if resp.status_code == 200:
+                        break
+                    elif resp.status_code in (429, 403) and len(self.api_keys) > 1:
+                        reason = "HTTP 429 Rate Limit" if resp.status_code == 429 else "HTTP 403 Forbidden"
+                        logger.warning(f"Apollo key #{self._current_index + 1} returned {reason}. Failing over to next key...")
+                        self.rotate_key(reason=reason)
+                        attempts += 1
+                        time.sleep(0.3)
+                        continue
+                    else:
+                        logger.debug(f"Apollo API error: {resp.status_code} - {resp.text[:200]}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Error querying Apollo API with key #{self._current_index + 1}: {e}")
+                    if len(self.api_keys) > 1:
+                        self.rotate_key(reason="Network exception")
+                        attempts += 1
+                        continue
                     break
 
+            if not resp or resp.status_code != 200:
+                break
+
+            try:
                 data = resp.json()
                 people = data.get("people", [])
                 if not people:

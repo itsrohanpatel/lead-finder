@@ -207,3 +207,72 @@ def test_unmask_already_complete():
     assert unmasked["name"] == "Pratyush Kumar"
     mock_search_engine.search_duckduckgo.assert_not_called()
 
+
+def test_multi_key_resolution():
+    # 1. Comma-separated string
+    provider = ApolloProvider(api_key="key_a, key_b , key_c")
+    assert provider.api_keys == ["key_a", "key_b", "key_c"]
+    assert provider.api_key == "key_a"
+
+    # 2. Key list
+    provider2 = ApolloProvider(api_key=["k1", "k2"])
+    assert provider2.api_keys == ["k1", "k2"]
+
+    # 3. Environment variables (APOLLO_API_KEYS and numbered APOLLO_API_KEY_*)
+    with patch.dict("os.environ", {
+        "APOLLO_API_KEYS": "env_key1,env_key2",
+        "APOLLO_API_KEY_1": "num_key1",
+        "APOLLO_API_KEY_2": "num_key2",
+    }, clear=False):
+        keys = ApolloProvider._resolve_api_keys()
+        assert "env_key1" in keys
+        assert "env_key2" in keys
+        assert "num_key1" in keys
+        assert "num_key2" in keys
+
+
+def test_key_rotation_and_failover_on_rate_limit():
+    provider = ApolloProvider(api_key=["key_first", "key_second"])
+    assert provider.api_key == "key_first"
+
+    # Rotate
+    next_key = provider.rotate_key(reason="test")
+    assert next_key == "key_second"
+    assert provider.api_key == "key_second"
+
+    # Rotate wraps around
+    wrap_key = provider.rotate_key(reason="test_wrap")
+    assert wrap_key == "key_first"
+    assert provider.api_key == "key_first"
+
+
+@patch("requests.post")
+def test_search_employees_automatic_failover(mock_post):
+    provider = ApolloProvider(api_key=["key_limited", "key_backup"])
+
+    # First key returns 429, second key returns 200 with people
+    mock_429 = MagicMock(status_code=429, text="Rate limit exceeded")
+    mock_200 = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "people": [
+                {
+                    "name": "Jane Doe",
+                    "first_name": "Jane",
+                    "last_name": "Doe",
+                    "title": "CTO",
+                }
+            ]
+        },
+    )
+    mock_post.side_effect = [mock_429, mock_200]
+
+    results = provider.search_employees("test.com", max_records=5)
+
+    assert len(results) == 1
+    assert results[0]["name"] == "Jane Doe"
+    assert mock_post.call_count == 2
+    # Verify second call used the rotated key
+    second_call_kwargs = mock_post.call_args_list[1][1]
+    assert second_call_kwargs["headers"]["X-Api-Key"] == "key_backup"
+
