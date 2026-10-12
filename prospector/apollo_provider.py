@@ -80,6 +80,46 @@ class ApolloProvider:
         "sr": "senior",
     }
 
+    DEPARTMENT_TITLES_MAP = {
+        "human_resources": [
+            "recruiter", "talent", "human resources", "hr", "people",
+            "talent acquisition", "staffing", "talent partner", "hiring",
+            "hrbp", "head of people", "vp people", "people operations",
+            "people partner", "head of talent", "recruiting manager"
+        ],
+        "c_suite": [
+            "ceo", "cto", "coo", "cfo", "cmo", "cro", "cpo",
+            "founder", "co-founder", "cofounder", "president", "managing director",
+            "chief", "owner", "partner", "board member", "director"
+        ],
+        "engineering_technical": [
+            "engineer", "engineering", "developer", "architect",
+            "software", "technical lead", "tech lead", "cto", "data scientist",
+            "machine learning", "ai engineer"
+        ],
+        "product": [
+            "product manager", "head of product", "vp product",
+            "product lead", "product owner", "product designer", "design lead"
+        ],
+        "sales": [
+            "sales", "business development", "account executive", "bdr", "sdr",
+            "head of sales", "vp sales", "sales director"
+        ],
+        "marketing": [
+            "marketing", "growth", "content", "head of marketing", "vp marketing",
+            "brand", "demand gen"
+        ],
+        "finance": [
+            "finance", "accounting", "cfo", "controller", "head of finance", "fp&a"
+        ],
+        "operations": [
+            "operations", "coo", "head of operations", "operations manager", "ops"
+        ],
+        "legal": [
+            "legal", "general counsel", "counsel", "compliance"
+        ],
+    }
+
     def __init__(self, api_key: Optional[Union[str, List[str]]] = None):
         self.api_keys: List[str] = self._resolve_api_keys(api_key)
         self._current_index: int = 0
@@ -173,6 +213,8 @@ class ApolloProvider:
         resolved = []
         for d in departments:
             clean = d.strip().lower().replace("-", "_").replace(" ", "_")
+            if clean == "all":
+                return []
             if clean in cls.DEPARTMENT_MAP:
                 enum_val = cls.DEPARTMENT_MAP[clean]
                 if enum_val not in resolved:
@@ -187,6 +229,8 @@ class ApolloProvider:
         resolved = []
         for s in seniorities:
             clean = s.strip().lower().replace("-", "_").replace(" ", "_")
+            if clean == "all":
+                return []
             if clean in cls.SENIORITY_MAP:
                 enum_val = cls.SENIORITY_MAP[clean]
                 if enum_val not in resolved:
@@ -239,45 +283,16 @@ class ApolloProvider:
 
         return None
 
-    def search_employees(
-        self,
-        website: str,
-        departments: Optional[List[str]] = None,
-        seniority: Optional[List[str]] = None,
-        max_records: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """Fetch employee records directly from Apollo API."""
-        if not self.api_key:
-            logger.warning("No Apollo API key provided. Skipping Apollo direct lookup.")
-            return []
-
-        domain = self.clean_domain(website)
-        if not domain:
-            return []
-
-        headers = {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-            "X-Api-Key": self.api_key,
-        }
-
+    def _fetch_apollo_people(self, payload: Dict[str, Any], max_records: int) -> List[Dict[str, Any]]:
+        """Fetch raw people records from Apollo API for a given payload with automatic pagination & failover."""
         results: List[Dict[str, Any]] = []
-        page = 1
-        per_page = min(max_records, 100)
-
-        valid_deps = self.resolve_departments(departments)
-        valid_sens = self.resolve_seniorities(seniority)
+        page = payload.get("page", 1)
+        per_page = payload.get("per_page", min(max_records, 100))
 
         while len(results) < max_records:
-            payload: Dict[str, Any] = {
-                "q_organization_domains_list": [domain],
-                "page": page,
-                "per_page": per_page,
-            }
-            if valid_deps:
-                payload["person_departments"] = valid_deps
-            if valid_sens:
-                payload["person_seniorities"] = valid_sens
+            current_payload = dict(payload)
+            current_payload["page"] = page
+            current_payload["per_page"] = per_page
 
             attempts = 0
             max_attempts = max(1, len(self.api_keys))
@@ -291,7 +306,7 @@ class ApolloProvider:
                     "X-Api-Key": current_key,
                 }
                 try:
-                    resp = requests.post(self.BASE_URL, headers=headers, json=payload, timeout=12.0)
+                    resp = requests.post(self.BASE_URL, headers=headers, json=current_payload, timeout=12.0)
                     if resp.status_code == 200:
                         break
                     elif resp.status_code in (429, 403) and len(self.api_keys) > 1:
@@ -321,49 +336,85 @@ class ApolloProvider:
                 if not people:
                     break
 
-                for p in people:
-                    first = p.get("first_name", "")
-                    last = p.get("last_name", "")
-                    last_obf = p.get("last_name_obfuscated", "")
-                    name = p.get("name")
-
-                    if not name:
-                        if first and last:
-                            name = f"{first} {last}".strip()
-                        elif first and last_obf:
-                            name = f"{first} {last_obf}".strip()
-                        elif first:
-                            name = first
-
-                    title = p.get("title") or p.get("headline") or ""
-                    linkedin_url = p.get("linkedin_url", "")
-                    city = p.get("city", "")
-                    country = p.get("country", "")
-                    location = f"{city}, {country}".strip(", ") if (city or country) else None
-
-                    results.append({
-                        "name": name,
-                        "first_name": first,
-                        "last_name": last or last_obf,
-                        "last_name_obfuscated": last_obf,
-                        "is_obfuscated": bool(last_obf and "*" in last_obf),
-                        "title": title,
-                        "job_title": title,
-                        "linkedin_url": linkedin_url,
-                        "location": location,
-                        "company_name": p.get("organization", {}).get("name") if isinstance(p.get("organization"), dict) else None,
-                        "domain": domain,
-                        "raw_person": p,
-                    })
-
-                    if len(results) >= max_records:
-                        break
-
-                page += 1
-                if len(people) < per_page:
+                results.extend(people)
+                if len(results) >= max_records or len(people) < per_page:
                     break
+                page += 1
             except Exception as e:
-                logger.warning(f"Error querying Apollo API: {e}")
+                logger.warning(f"Error parsing Apollo API response: {e}")
+                break
+
+        return results
+
+    def search_employees(
+        self,
+        website: str,
+        departments: Optional[List[str]] = None,
+        seniority: Optional[List[str]] = None,
+        titles: Optional[List[str]] = None,
+        max_records: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Fetch employee records directly from Apollo API using exact enums and optional title filters."""
+        if not self.api_key:
+            logger.warning("No Apollo API key provided. Skipping Apollo direct lookup.")
+            return []
+
+        domain = self.clean_domain(website)
+        if not domain:
+            return []
+
+        valid_deps = self.resolve_departments(departments)
+        valid_sens = self.resolve_seniorities(seniority)
+
+        payload: Dict[str, Any] = {
+            "q_organization_domains_list": [domain],
+        }
+        if valid_deps:
+            payload["person_departments"] = valid_deps
+            payload["person_department_or_subdepartments"] = valid_deps
+        if valid_sens:
+            payload["person_seniorities"] = valid_sens
+        if titles:
+            payload["person_titles"] = titles
+
+        raw_people = self._fetch_apollo_people(payload, max_records=max_records)
+
+        results: List[Dict[str, Any]] = []
+        for p in raw_people:
+            first = p.get("first_name", "")
+            last = p.get("last_name", "")
+            last_obf = p.get("last_name_obfuscated", "")
+            name = p.get("name")
+
+            if not name:
+                if first and last:
+                    name = f"{first} {last}".strip()
+                elif first and last_obf:
+                    name = f"{first} {last_obf}".strip()
+                elif first:
+                    name = first
+
+            title = p.get("title") or p.get("headline") or ""
+            linkedin_url = p.get("linkedin_url", "")
+            city = p.get("city", "")
+            country = p.get("country", "")
+            location = f"{city}, {country}".strip(", ") if (city or country) else None
+
+            results.append({
+                "name": name,
+                "first_name": first,
+                "last_name": last or last_obf,
+                "last_name_obfuscated": last_obf,
+                "is_obfuscated": bool(last_obf and "*" in last_obf),
+                "title": title,
+                "job_title": title,
+                "linkedin_url": linkedin_url,
+                "location": location,
+                "company_name": p.get("organization", {}).get("name") if isinstance(p.get("organization"), dict) else None,
+                "domain": domain,
+                "raw_person": p,
+            })
+            if len(results) >= max_records:
                 break
 
         return results

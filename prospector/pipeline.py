@@ -60,6 +60,22 @@ class ProspectorPipeline:
         if target_roles is None:
             target_roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]
 
+        # Align target_roles with explicitly requested departments
+        if departments:
+            resolved_deps = self.apollo_provider.resolve_departments(departments) if self.apollo_provider else [d.lower().strip() for d in departments]
+            if resolved_deps and target_roles == [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]:
+                derived_roles = []
+                if any(d in resolved_deps for d in ("c_suite", "csuite", "executive", "exec")):
+                    derived_roles.append(RoleCategory.C_SUITE)
+                if any(d in resolved_deps for d in ("human_resources", "hr", "talent", "recruiting", "people")):
+                    derived_roles.append(RoleCategory.HR_TALENT)
+                if any(d in resolved_deps for d in ("engineering_technical", "engineering", "tech", "dev", "it", "information_technology")):
+                    derived_roles.append(RoleCategory.TECH_LEAD)
+                if any(d in resolved_deps for d in ("product", "design")):
+                    derived_roles.append(RoleCategory.PRODUCT)
+                if derived_roles:
+                    target_roles = derived_roles
+
         # Step 1: Resolve Company Info
         company_info = CompanyResolver.resolve(company_input, user_hint_name=company_name_hint)
 
@@ -124,6 +140,26 @@ class ProspectorPipeline:
                 max_records=self.max_leads_per_role * 2,
             )
 
+            # Targeted title expansion query: many SME/startup recruiters & leaders have deps: None in Apollo
+            if apollo_deps and len(apollo_candidates) < self.max_leads_per_role * 2:
+                target_titles = []
+                for d in apollo_deps:
+                    if d in self.apollo_provider.DEPARTMENT_TITLES_MAP:
+                        target_titles.extend(self.apollo_provider.DEPARTMENT_TITLES_MAP[d])
+                if target_titles:
+                    title_cands = self.apollo_provider.search_employees(
+                        website=company_info.domain,
+                        titles=target_titles[:15],
+                        seniority=apollo_sens,
+                        max_records=self.max_leads_per_role * 2,
+                    )
+                    seen_cand_keys = {c.get("linkedin_url") or c.get("name") for c in apollo_candidates}
+                    for tc in title_cands:
+                        key = tc.get("linkedin_url") or tc.get("name")
+                        if key and key not in seen_cand_keys:
+                            seen_cand_keys.add(key)
+                            apollo_candidates.append(tc)
+
             if apollo_candidates:
                 logger.info(f"Apollo returned {len(apollo_candidates)} raw candidate records for {company_info.domain}")
                 unmasked = self.apollo_provider.unmask_candidates(
@@ -148,7 +184,13 @@ class ProspectorPipeline:
                             title = cand.get("title", "")
                             role_cat = LeadExtractor.categorize_role(title)
 
-                            if role_cat in target_roles or departments:
+                            # Candidate must strictly match requested departments or target roles
+                            if departments:
+                                matches_req = LeadExtractor.matches_departments(title, departments)
+                            else:
+                                matches_req = role_cat in target_roles
+
+                            if matches_req:
                                 lead_rec = LeadRecord(
                                     full_name=f"{fname} {lname}",
                                     first_name=fname,
@@ -165,16 +207,21 @@ class ProspectorPipeline:
                                 if url:
                                     seen_urls.add(url)
 
-                # Check if Apollo satisfied target roles
-                apollo_c_suite = sum(1 for l in extracted_leads if l.role_category == RoleCategory.C_SUITE)
-                apollo_hr = sum(1 for l in extracted_leads if l.role_category == RoleCategory.HR_TALENT)
+                # Check if Apollo satisfied requested personas
+                if departments:
+                    if len(extracted_leads) >= min(self.max_leads_per_role, 1):
+                        logger.info(f"Apollo satisfied requested department personas ({len(extracted_leads)} leads). Skipping broad search dorks.")
+                        skip_search_dorks = True
+                else:
+                    apollo_c_suite = sum(1 for l in extracted_leads if l.role_category == RoleCategory.C_SUITE)
+                    apollo_hr = sum(1 for l in extracted_leads if l.role_category == RoleCategory.HR_TALENT)
 
-                c_suite_ok = (RoleCategory.C_SUITE not in target_roles) or (apollo_c_suite >= min(self.max_leads_per_role, 1))
-                hr_ok = (RoleCategory.HR_TALENT not in target_roles) or (apollo_hr >= min(self.max_leads_per_role, 1))
+                    c_suite_ok = (RoleCategory.C_SUITE not in target_roles) or (apollo_c_suite >= min(self.max_leads_per_role, 1))
+                    hr_ok = (RoleCategory.HR_TALENT not in target_roles) or (apollo_hr >= min(self.max_leads_per_role, 1))
 
-                if (c_suite_ok and hr_ok and len(extracted_leads) >= len(target_roles)) or (departments and len(extracted_leads) > 0):
-                    logger.info(f"Apollo satisfied requested personas ({apollo_c_suite} C-Suite, {apollo_hr} HR, total: {len(extracted_leads)}). Skipping broad search dorks.")
-                    skip_search_dorks = True
+                    if c_suite_ok and hr_ok and len(extracted_leads) >= len(target_roles):
+                        logger.info(f"Apollo satisfied requested personas ({apollo_c_suite} C-Suite, {apollo_hr} HR, total: {len(extracted_leads)}). Skipping broad search dorks.")
+                        skip_search_dorks = True
 
         # Step 3: Query Search Engine with Role-Specific Dorks (if needed)
         raw_search_items = []

@@ -77,8 +77,6 @@ HR_TALENT_KEYWORDS = [
     r"\bsourcing\b",
     r"\bhiring\b",
     r"\bonboarding\b",
-    r"\btrain\w*\b",
-    r"\blearning\b",
     r"\bl&d\b",
     r"\bl & d\b",
     r"\blearning and development\b",
@@ -137,6 +135,11 @@ HR_TALENT_KEYWORDS = [
     r"\bindustrial relations\b",
     r"\bir & hr\b",
     r"\bhr & ir\b",
+    r"\b(?:corporate|technical|sales|leadership|employee|internal)\s+train(?:ing|er|ers)?\b",
+    r"\btraining\s+(?:and|&)\s+development\b",
+    r"\btraining\s+(?:specialist|manager|officer|lead|coordinator|partner|director|head)\b",
+    r"(?<!machine\s)(?<!deep\s)(?<!reinforcement\s)(?<!active\s)\blearning\s+(?:and|&)\s+development\b",
+    r"(?<!machine\s)(?<!deep\s)(?<!reinforcement\s)(?<!active\s)\blearning\s+(?:specialist|manager|lead|director|head|officer|coordinator|partner)\b",
 ]
 
 TECH_LEAD_KEYWORDS = [
@@ -146,20 +149,24 @@ TECH_LEAD_KEYWORDS = [
     r"\bvp\s+(?:of\s+)?(?:engineering|tech(?:nology)?|software)\b",
     r"\bvice\s+president\s+(?:of\s+)?(?:engineering|tech(?:nology)?|software)\b",
     r"\bdirector\s+(?:of\s+)?(?:engineering|tech(?:nology)?|software)\b",
-    r"\bengineering\s+(?:manager|director|lead|head)\b",
+    r"\bengineering\s+(?:manager|director|lead|head|leader)\b",
     r"\bfounding\s+engineer\b",
     r"\bfounding\s+developer\b",
     r"\bprincipal\s+(?:software\s+)?(?:engineer|architect|developer)\b",
     r"\bstaff\s+(?:software\s+)?(?:engineer|architect|developer)\b",
-    r"\bsoftware\s+architect\b",
+    r"\bsoftware\s+(?:engineer|architect|developer)\b",
     r"\bsolutions?\s+architect\b",
-    r"\bbackend\s+(?:lead|architect|engineer)\b",
-    r"\bfrontend\s+(?:lead|architect|engineer)\b",
-    r"\bdata\s+science\s+lead\b",
-    r"\bai\s+(?:engineer|lead|architect)\b",
-    r"\bml\s+(?:engineer|lead|architect)\b",
-    r"\bdevops\s+lead\b",
-    r"\bsre\s+lead\b",
+    r"\bbackend\s+(?:lead|architect|engineer|developer)\b",
+    r"\bfrontend\s+(?:lead|architect|engineer|developer)\b",
+    r"\bdata\s+(?:science|scientist|engineer)\s*(?:lead)?\b",
+    r"\bai\s+(?:engineer|lead|architect|researcher|scientist)\b",
+    r"\bml\s+(?:engineer|lead|architect|researcher|scientist)\b",
+    r"\bmachine\s+learning\b",
+    r"\bdeep\s+learning\b",
+    r"\bllm\s+(?:researcher|engineer|scientist)\b",
+    r"\bresearch\s+(?:scientist|engineer|lead)\b",
+    r"\bdevops\s+(?:lead|engineer)\b",
+    r"\bsre\s+(?:lead|engineer)\b",
 ]
 
 PRODUCT_KEYWORDS = [
@@ -258,6 +265,58 @@ class LeadExtractor:
             if re.search(kw, title_lower):
                 return RoleCategory.C_SUITE
         return RoleCategory.OTHER
+
+    @classmethod
+    def matches_departments(cls, title: str, departments: Optional[List[str]]) -> bool:
+        """Check if job title or resolved category matches any of the requested departments."""
+        if not departments:
+            return True
+        deps_clean = [d.lower().strip().replace("-", "_").replace(" ", "_") for d in departments if d.strip()]
+        if not deps_clean or "all" in deps_clean:
+            return True
+
+        title_lower = title.lower()
+        role_cat = cls.categorize_role(title)
+
+        for dep in deps_clean:
+            if dep in ("human_resources", "hr", "talent", "recruiting", "people"):
+                if role_cat == RoleCategory.HR_TALENT:
+                    return True
+                if any(re.search(kw, title_lower) for kw in HR_TALENT_KEYWORDS):
+                    return True
+            elif dep in ("c_suite", "csuite", "executive", "exec"):
+                if role_cat == RoleCategory.C_SUITE:
+                    return True
+                if any(re.search(kw, title_lower) for kw in C_SUITE_KEYWORDS):
+                    return True
+            elif dep in ("engineering_technical", "engineering", "tech", "dev", "it", "information_technology"):
+                if role_cat == RoleCategory.TECH_LEAD:
+                    return True
+                if any(re.search(kw, title_lower) for kw in TECH_LEAD_KEYWORDS):
+                    return True
+            elif dep in ("product", "design"):
+                if role_cat == RoleCategory.PRODUCT:
+                    return True
+                if any(re.search(kw, title_lower) for kw in PRODUCT_KEYWORDS):
+                    return True
+            elif dep in ("sales", "bizdev", "bd"):
+                if re.search(r"\b(?:sales|business development|account executive|bdr|sdr|account manager)\b", title_lower):
+                    return True
+            elif dep in ("marketing",):
+                if re.search(r"\b(?:marketing|growth|content|brand|seo|demand gen)\b", title_lower):
+                    return True
+            elif dep in ("operations", "mgmt", "management"):
+                if re.search(r"\b(?:operations|ops|coo|business operations)\b", title_lower):
+                    return True
+            elif dep in ("finance",):
+                if re.search(r"\b(?:finance|accounting|cfo|controller|fp&a|treasury)\b", title_lower):
+                    return True
+            elif dep in ("legal",):
+                if re.search(r"\b(?:legal|counsel|compliance|attorney)\b", title_lower):
+                    return True
+            elif dep in title_lower:
+                return True
+        return False
 
     @classmethod
     def get_brand_tokens(cls, company_name: str, domain: Optional[str] = None) -> List[str]:

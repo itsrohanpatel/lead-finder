@@ -16,6 +16,7 @@ from rich.text import Text
 
 from prospector.models import RoleCategory, ProspectorResult
 from prospector.pipeline import ProspectorPipeline
+from prospector.apollo_provider import ApolloProvider
 
 # Reconfigure Windows stdout to UTF-8 if needed to avoid charmap encoding errors
 if hasattr(sys.stdout, "reconfigure"):
@@ -269,11 +270,27 @@ def main() -> None:
     else:
         logging.basicConfig(level=logging.WARNING)
 
+    departments = [d.strip().strip("'\"") for d in re.split(r"[,;]+", args.departments) if d.strip().strip("'\"")] if args.departments else None
+    seniorities = [s.strip().strip("'\"") for s in re.split(r"[,;]+", args.seniorities) if s.strip().strip("'\"")] if args.seniorities else None
+
     # Resolve roles
     if args.roles == "c-suite":
         roles = [RoleCategory.C_SUITE]
     elif args.roles == "hr":
         roles = [RoleCategory.HR_TALENT]
+    elif departments:
+        roles = []
+        dep_set = set(ApolloProvider.resolve_departments(departments)) if departments else set()
+        if "c_suite" in dep_set:
+            roles.append(RoleCategory.C_SUITE)
+        if "human_resources" in dep_set:
+            roles.append(RoleCategory.HR_TALENT)
+        if "engineering_technical" in dep_set:
+            roles.append(RoleCategory.TECH_LEAD)
+        if "product" in dep_set:
+            roles.append(RoleCategory.PRODUCT)
+        if not roles:
+            roles = [RoleCategory.OTHER]
     else:
         roles = [RoleCategory.C_SUITE, RoleCategory.HR_TALENT]
 
@@ -282,9 +299,6 @@ def main() -> None:
     if not raw_targets:
         console.print("[red]No valid target companies or domains provided.[/red]")
         return
-
-    departments = [d.strip().strip("'\"") for d in re.split(r"[,;]+", args.departments) if d.strip().strip("'\"")] if args.departments else None
-    seniorities = [s.strip().strip("'\"") for s in re.split(r"[,;]+", args.seniorities) if s.strip().strip("'\"")] if args.seniorities else None
 
     from prospector.search_engine import SearchEngine
     search_engine = SearchEngine(

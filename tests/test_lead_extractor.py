@@ -38,6 +38,25 @@ def test_categorize_role():
     assert LeadExtractor.categorize_role("Head of Hiring") == RoleCategory.HR_TALENT
     assert LeadExtractor.categorize_role("Hiring & Recruitment Lead") == RoleCategory.HR_TALENT
     assert LeadExtractor.categorize_role("Software Engineer") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Machine Learning Engineer") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Deep Learning Scientist") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("AI Engineer") == RoleCategory.OTHER
+    assert LeadExtractor.categorize_role("Lead, AI Ecosystems") == RoleCategory.OTHER
+
+
+def test_matches_departments():
+    assert LeadExtractor.matches_departments("Senior HR and Talent Acquisition Specialist", ["hr"]) is True
+    assert LeadExtractor.matches_departments("Human Resources Business Partner", ["human_resources"]) is True
+    assert LeadExtractor.matches_departments("Lead Recruiter, R&D", ["hr"]) is True
+    assert LeadExtractor.matches_departments("Talent Partner", ["hr"]) is True
+    assert LeadExtractor.matches_departments("Chief Executive Officer", ["hr"]) is False
+    assert LeadExtractor.matches_departments("Machine Learning Engineer", ["hr"]) is False
+    assert LeadExtractor.matches_departments("Software Engineer", ["hr"]) is False
+    assert LeadExtractor.matches_departments("Co-Founder", ["c_suite"]) is True
+    assert LeadExtractor.matches_departments("Lead Recruiter", ["c_suite"]) is False
+    assert LeadExtractor.matches_departments("Co-Founder", ["c_suite", "hr"]) is True
+    assert LeadExtractor.matches_departments("Lead Recruiter", ["c_suite", "hr"]) is True
+    assert LeadExtractor.matches_departments("Software Engineer", ["all"]) is True
 
 
 def test_extract_leads_deduplication():
