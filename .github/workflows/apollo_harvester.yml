@@ -8,46 +8,16 @@ on:
         required: true
         type: string
         default: 'sarvam.ai'
-      department:
-        description: 'Primary Department Target'
+      departments:
+        description: 'Department Target(s) [Comma-separated, or all]. Options: c_suite, human_resources, engineering_technical, sales, marketing, product, operations, finance, information_technology, design, legal, medical_health, education, consulting'
         required: true
-        type: choice
-        options:
-          - all
-          - c_suite
-          - human_resources
-          - engineering_technical
-          - sales
-          - marketing
-          - product
-          - operations
-          - finance
-          - information_technology
-          - design
-          - legal
-          - medical_health
-          - education
-          - consulting
-        default: 'c_suite'
-      custom_departments:
-        description: 'Optional Multi-Department Override (comma-separated, e.g. c_suite,hr,engineering)'
-        required: false
         type: string
-        default: ''
-      seniority:
-        description: 'Seniority Level Target'
+        default: 'c_suite, human_resources'
+      seniorities:
+        description: 'Seniority Level Target(s) [Comma-separated, or all]. Options: founder, c_suite, head, director, vp, manager, senior, entry, owner'
         required: true
-        type: choice
-        options:
-          - all
-          - c_suite
-          - founder
-          - head
-          - director
-          - vp
-          - manager
-          - senior
-        default: 'all'
+        type: string
+        default: 'founder, c_suite, head'
       output_format:
         description: 'Output format'
         required: true
@@ -106,15 +76,13 @@ jobs:
           fi
 
           # Resolve departments argument
-          if [ -n "${{ inputs.custom_departments }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --departments ${{ inputs.custom_departments }}"
-          elif [ "${{ inputs.department }}" != "all" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --departments ${{ inputs.department }}"
+          if [ -n "${{ inputs.departments }}" ] && [ "${{ inputs.departments }}" != "all" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --departments '${{ inputs.departments }}'"
           fi
 
           # Resolve seniorities argument
-          if [ "${{ inputs.seniority }}" != "all" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --seniorities ${{ inputs.seniority }}"
+          if [ -n "${{ inputs.seniorities }}" ] && [ "${{ inputs.seniorities }}" != "all" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --seniorities '${{ inputs.seniorities }}'"
           fi
 
           python -m prospector.cli "${{ inputs.company }}" \
