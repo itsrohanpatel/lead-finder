@@ -123,3 +123,16 @@ Whenever executing lead discovery for a company or domain:
   1. **LinkedIn Company Slug Derivation**: Dynamically parse the verified LinkedIn company URL slug (e.g., `company/upman-placements-pvt-ltd`), convert hyphenated slugs to title-cased names, strip corporate entity suffixes (`pvt`, `ltd`, `inc`, `llc`), and feed the extracted brand name into search terms.
   2. **Domain SLD & Tokenization**: Extract domain Second-Level Domain tokens organically without hardcoded assumptions.
   3. **Universal Linguistic & Suffix Rules**: Apply generic linguistic rules (e.g. trailing `HRM` -> `HR`, `AI` acronyms, or corporate legal entity suffix stripping) rather than company-specific mappings.
+
+---
+
+## 11. Apollo Direct API & Hybrid Discovery Invariants
+
+* **Zero-Credit Roster Acceleration**:
+  - When `APOLLO_API_KEY` is present, query `POST /api/v1/mixed_people/api_search` using `q_organization_domains_list`, `person_departments`, and `person_seniorities`.
+  - Apollo roster records seed candidate profiles, which are then piped directly into `EmailPermutator` and `EmailVerifier` for free deliverability resolution without consuming Apollo email reveal credits.
+* **Zero Secret Commitment**:
+  - Never commit or log user-supplied API keys (Apollo, Serper, Apify, Google CSE). Store keys exclusively in `.env` or temporary process environment memory.
+* **Hybrid Fallback Guarantee**:
+  - Aggregator databases miss ~20% of boutique SMEs and hyper-local agencies. If Apollo returns 0 records, always cascade to Step 3a/3b search engine dorks to guarantee comprehensive coverage across both venture-backed and boutique targets.
+
