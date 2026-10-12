@@ -191,7 +191,7 @@ class ProspectorPipeline:
                 raw_search_items.extend(base_results)
 
             c_kws = ["CEO", "Founder", "Director"] if idx == 0 else ["CEO", "Founder"]
-            hr_kws = ["HR", "Talent", "People", "Hiring"] if idx == 0 else ["HR", "Talent"]
+            hr_kws = ["HR", "Recruiting", "Recruiter", "Talent", "People", "Hiring"] if idx == 0 else ["HR", "Recruiter", "Talent"]
 
             if RoleCategory.C_SUITE in target_roles:
                 for role_kw in c_kws:

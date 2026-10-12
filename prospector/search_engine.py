@@ -23,10 +23,19 @@ logger = logging.getLogger(__name__)
 
 
 class SearchEngine:
-    """Dispatches search queries to DuckDuckGo/Yahoo (free, zero-config) or optional Serper/Google APIs."""
+    """Dispatches search queries to DuckDuckGo/Yahoo (free, zero-config), Google CSE, Apify, or Serper."""
 
-    def __init__(self, serper_api_key: Optional[str] = None):
+    def __init__(
+        self,
+        serper_api_key: Optional[str] = None,
+        google_api_key: Optional[str] = None,
+        google_cse_id: Optional[str] = None,
+        apify_api_token: Optional[str] = None,
+    ):
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
+        self.google_api_key = google_api_key or os.getenv("GOOGLE_API_KEY")
+        self.google_cse_id = google_cse_id or os.getenv("GOOGLE_CSE_ID")
+        self.apify_api_token = apify_api_token or os.getenv("APIFY_API_TOKEN")
         # Silence ddgs backend warnings (e.g. grokipedia/wikipedia disabled)
         logging.getLogger("ddgs").setLevel(logging.ERROR)
         self._ddgs_client = None
@@ -95,6 +104,84 @@ class SearchEngine:
             self._cache[query] = results
         return results
 
+    def search_google_cse(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Search using official Google Custom Search JSON API."""
+        if not self.google_api_key or not self.google_cse_id:
+            return []
+        if query in self._cache:
+            return self._cache[query]
+
+        try:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "key": self.google_api_key,
+                "cx": self.google_cse_id,
+                "q": query,
+                "num": min(max(1, max_results), 10),
+            }
+            resp = requests.get(url, params=params, timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = []
+                for item in data.get("items", []):
+                    items.append({
+                        "title": item.get("title", ""),
+                        "link": item.get("link", ""),
+                        "snippet": item.get("snippet", ""),
+                    })
+                if items:
+                    self._cache[query] = items
+                return items
+            else:
+                logger.warning(f"Google CSE API returned status {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:
+            logger.warning(f"Google CSE API search error: {exc}")
+        return []
+
+    def search_apify(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:
+        """Search using Apify Google Search Scraper Actor with rotating proxies."""
+        if not self.apify_api_token:
+            return []
+        if query in self._cache:
+            return self._cache[query]
+
+        try:
+            url = f"https://api.apify.com/v2/acts/apify~google-search-scraper/run-sync-get-dataset-items?token={self.apify_api_token}"
+            payload = {
+                "queries": query,
+                "maxPagesPerQuery": 1,
+                "resultsPerPage": max_results,
+                "mobileResults": False,
+            }
+            headers = {"Content-Type": "application/json"}
+            resp = requests.post(url, json=payload, headers=headers, timeout=30.0)
+            if resp.status_code in [200, 201]:
+                dataset = resp.json()
+                items = []
+                if isinstance(dataset, list):
+                    for record in dataset:
+                        if "organicResults" in record:
+                            for org in record.get("organicResults", []):
+                                items.append({
+                                    "title": org.get("title", ""),
+                                    "link": org.get("url", ""),
+                                    "snippet": org.get("description", ""),
+                                })
+                        elif "url" in record and "title" in record:
+                            items.append({
+                                "title": record.get("title", ""),
+                                "link": record.get("url", ""),
+                                "snippet": record.get("description", record.get("snippet", "")),
+                            })
+                if items:
+                    self._cache[query] = items
+                return items
+            else:
+                logger.warning(f"Apify API returned status {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:
+            logger.warning(f"Apify API search error: {exc}")
+        return []
+
     def search_serper(self, query: str, max_results: int = 15) -> List[Dict[str, Any]]:
         """Optional accelerator search using Serper.dev API if key provided."""
         if not self.serper_api_key:
@@ -122,15 +209,31 @@ class SearchEngine:
         return []
 
     def query(self, query_str: str, max_results: int = 15) -> List[Dict[str, Any]]:
-        """Query primary engine (DuckDuckGo) with fallback to Serper if configured."""
+        """Query configured search engines with automatic fallback to free DuckDuckGo/Yahoo."""
         logger.info(f"Executing search dork: {query_str}")
-        # Try Serper first if key provided for faster enterprise response
+
+        # 1. Google Custom Search JSON API (if configured)
+        if self.google_api_key and self.google_cse_id:
+            res = self.search_google_cse(query_str, max_results=max_results)
+            if res:
+                return res
+            logger.info("Google CSE yielded no results, trying subsequent search backends")
+
+        # 2. Serper.dev Google API (if configured)
         if self.serper_api_key:
             res = self.search_serper(query_str, max_results=max_results)
             if res:
                 return res
+            logger.info("Serper API yielded no results, trying subsequent search backends")
 
-        # Primary default: DuckDuckGo
+        # 3. Apify Google Search Scraper (if configured)
+        if self.apify_api_token:
+            res = self.search_apify(query_str, max_results=max_results)
+            if res:
+                return res
+            logger.info("Apify API yielded no results, falling back to DuckDuckGo/Yahoo")
+
+        # 4. Zero-Config Default: DuckDuckGo / Yahoo
         return self.search_duckduckgo(query_str, max_results=max_results)
 
     def find_company_domain(self, company_name: str) -> Optional[str]:

@@ -228,6 +228,22 @@ def main() -> None:
         help="Optional path to write GitHub Flavored Markdown summary (auto-detects GITHUB_STEP_SUMMARY)",
     )
     parser.add_argument(
+        "--serper-key",
+        help="Optional Serper.dev API key for Google SERP acceleration",
+    )
+    parser.add_argument(
+        "--google-api-key",
+        help="Optional Google Cloud API key for Custom Search JSON API",
+    )
+    parser.add_argument(
+        "--google-cse-id",
+        help="Optional Google Programmable Search Engine ID (cx)",
+    )
+    parser.add_argument(
+        "--apify-token",
+        help="Optional Apify API token for Google Search Scraper Actor fallback",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -255,7 +271,18 @@ def main() -> None:
         console.print("[red]No valid target companies or domains provided.[/red]")
         return
 
-    pipeline = ProspectorPipeline(check_smtp=not args.no_smtp, max_leads_per_role=args.max_leads)
+    from prospector.search_engine import SearchEngine
+    search_engine = SearchEngine(
+        serper_api_key=args.serper_key,
+        google_api_key=args.google_api_key,
+        google_cse_id=args.google_cse_id,
+        apify_api_token=args.apify_token,
+    )
+    pipeline = ProspectorPipeline(
+        search_engine=search_engine,
+        check_smtp=not args.no_smtp,
+        max_leads_per_role=args.max_leads,
+    )
     all_results: List[ProspectorResult] = []
 
     for idx, target in enumerate(raw_targets):
