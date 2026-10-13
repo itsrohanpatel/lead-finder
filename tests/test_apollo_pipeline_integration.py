@@ -169,3 +169,62 @@ def test_cli_apollo_argument_parsing():
             _, kwargs = mock_run.call_args
             assert kwargs["departments"] == ["c_suite", "hr", "tech"]
             assert kwargs["seniorities"] == ["founder", "c_suite", "lead"]
+
+
+def test_pipeline_apollo_preserves_obfuscated_roster_candidates():
+    """Verify that when unmasking fails, candidates with obfuscated last names are preserved and generate valid first-name emails."""
+    mock_search = MagicMock()
+    mock_apollo = MagicMock()
+
+    mock_apollo.search_employees.return_value = [
+        {
+            "name": "Aarthi Ba***n",
+            "first_name": "Aarthi",
+            "last_name": "Ba***n",
+            "last_name_obfuscated": "Ba***n",
+            "is_obfuscated": True,
+            "title": "Lead Recruiter, R&D",
+            "linkedin_url": "",
+            "location": "Bengaluru, India",
+        },
+    ]
+    mock_apollo.unmask_candidates.return_value = [
+        {
+            "name": "Aarthi Ba***n",
+            "first_name": "Aarthi",
+            "last_name": "Ba***n",
+            "last_name_obfuscated": "Ba***n",
+            "is_obfuscated": True,
+            "title": "Lead Recruiter, R&D",
+            "linkedin_url": "",
+            "location": "Bengaluru, India",
+        },
+    ]
+    mock_apollo.resolve_departments.return_value = ["human_resources"]
+    mock_apollo.resolve_seniorities.return_value = ["all"]
+
+    pipeline = ProspectorPipeline(
+        search_engine=mock_search,
+        apollo_provider=mock_apollo,
+        check_smtp=False,
+    )
+
+    with patch("prospector.company_resolver.CompanyResolver.resolve") as mock_resolve:
+        mock_resolve.return_value = CompanyInfo(
+            clean_name="Sarvam AI",
+            domain="sarvam.ai",
+            raw_input="sarvam.ai",
+        )
+        with patch("prospector.email_verifier.EmailVerifier.lookup_mx_records") as mock_mx:
+            mock_mx.return_value = MXInfo(
+                domain="sarvam.ai",
+                has_mx=True,
+                mx_records=["aspmx.l.google.com"],
+                provider="Google Workspace",
+            )
+            result = pipeline.run("sarvam.ai", departments=["human_resources"])
+
+    assert result.total_leads == 1
+    assert result.leads[0].first_name == "Aarthi"
+    assert result.leads[0].best_email == "aarthi@sarvam.ai"
+

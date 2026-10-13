@@ -175,10 +175,12 @@ class ProspectorPipeline:
                     lname = cand.get("last_name", "")
 
                     if not fname or not lname or "*" in lname:
-                        fname, lname = LeadExtractor.split_name(full_name)
+                        fn_split, ln_split = LeadExtractor.split_name(full_name)
+                        if ln_split and "*" not in ln_split:
+                            fname, lname = fn_split, ln_split
 
-                    if fname and lname and "*" not in lname:
-                        name_key = f"{fname.lower()} {lname.lower()}"
+                    if fname:
+                        name_key = f"{fname.lower()} {lname.lower()}".strip() if lname else fname.lower()
                         url = cand.get("linkedin_url")
                         if name_key not in seen_names and (not url or url not in seen_urls):
                             title = cand.get("title", "")
@@ -191,8 +193,9 @@ class ProspectorPipeline:
                                 matches_req = role_cat in target_roles
 
                             if matches_req:
+                                lead_name = f"{fname} {lname}".strip() if lname else fname
                                 lead_rec = LeadRecord(
-                                    full_name=f"{fname} {lname}",
+                                    full_name=lead_name,
                                     first_name=fname,
                                     last_name=lname,
                                     job_title=title or "Decision Maker",

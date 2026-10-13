@@ -443,13 +443,22 @@ class ApolloProvider:
         dork = f"site:linkedin.com/in {first} {clean_company}".strip()
 
         try:
-            results = search_engine.search_duckduckgo(dork, max_results=5)
+            if hasattr(search_engine, "search_duckduckgo"):
+                results = search_engine.search_duckduckgo(dork, max_results=5)
+            elif hasattr(search_engine, "query"):
+                results = search_engine.query(dork, max_results=5)
+            else:
+                results = []
             for item in results:
                 title = item.get("title", "")
+                snippet = item.get("snippet", "") or item.get("body", "")
                 link = item.get("link", "") or item.get("href", "")
 
-                # 1. Match against LinkedIn title
+                # 1. Match against LinkedIn title or snippet
                 matched = self.extract_name_from_linkedin_title(title, first, last_obf)
+                if not matched and snippet:
+                    matched = self.extract_name_from_linkedin_title(snippet, first, last_obf)
+
                 if matched:
                     full_name, resolved_last = matched
                     candidate["name"] = full_name
@@ -461,15 +470,34 @@ class ApolloProvider:
                     logger.info(f"Unmasked Apollo candidate: {first} {last_obf} -> {full_name}")
                     return candidate
 
-                # 2. Match against LinkedIn URL slug (e.g. linkedin.com/in/sshubamverma)
+                # 2. Match against LinkedIn URL slug (tokenized & concatenated)
                 if link and "linkedin.com/in/" in link:
                     slug_match = re.search(r"linkedin\.com/in/([a-zA-Z0-9_\-]+)", link)
                     if slug_match:
-                        slug = slug_match.group(1).lower()
+                        raw_slug = slug_match.group(1).lower()
                         clean_first = first.lower()
-                        if clean_first in slug:
-                            remainder = slug.replace(clean_first, "").strip("-_")
-                            remainder = re.sub(r"[0-9]+$", "", remainder)
+
+                        # 2a. Token-based slug matching (e.g. abhay-naik-12345, pratyush-kumar-8844a8a3)
+                        slug_tokens = [t for t in re.split(r"[-_]+", raw_slug) if t]
+                        if clean_first in slug_tokens:
+                            first_idx = slug_tokens.index(clean_first)
+                            for token in slug_tokens[first_idx + 1:]:
+                                clean_token = re.sub(r"[0-9]+$", "", token).strip()
+                                if clean_token and self.match_obfuscated_last_name(clean_token, last_obf):
+                                    resolved_last = clean_token.title()
+                                    full_name = f"{first} {resolved_last}"
+                                    candidate["name"] = full_name
+                                    candidate["first_name"] = first
+                                    candidate["last_name"] = resolved_last
+                                    candidate["is_obfuscated"] = False
+                                    candidate["linkedin_url"] = link
+                                    logger.info(f"Unmasked Apollo candidate from URL: {first} {last_obf} -> {full_name}")
+                                    return candidate
+
+                        # 2b. Concatenated slug matching (e.g. sshubamverma, aarthibalaraman)
+                        if clean_first in raw_slug:
+                            remainder = raw_slug.replace(clean_first, "")
+                            remainder = re.sub(r"[-_0-9]+$", "", remainder).strip("-_")
                             if remainder and self.match_obfuscated_last_name(remainder, last_obf):
                                 resolved_last = remainder.title()
                                 full_name = f"{first} {resolved_last}"

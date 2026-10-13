@@ -32,7 +32,8 @@ class EmailPermutator:
     def generate(cls, first_name: str, last_name: str, domain: str) -> List[EmailPermutation]:
         """Generate a ranked list of corporate email permutations."""
         first = cls.sanitize(first_name)
-        last = cls.sanitize(last_name)
+        # If last name is obfuscated (e.g. contains '*'), do not invent fake email using masked letters
+        last = "" if "*" in (last_name or "") else cls.sanitize(last_name)
         clean_domain = domain.lower().strip()
 
         if not first or not clean_domain:
